@@ -1,0 +1,280 @@
+import SwiftUI
+
+// MARK: - NoteBrowserView
+
+/// Displays the contents of a Notes section, supporting folder navigation,
+/// swipe actions, context menus, and sheet presentation for mutations.
+struct NoteBrowserView: View {
+
+    // MARK: - Parameters
+
+    let section: NotesSection
+    let parentID: String?
+
+    // MARK: - Environment
+
+    @EnvironmentObject var notesDriveService: NotesDriveService
+
+    // MARK: - State
+
+    @State private var showCreateFolder = false
+    @State private var showEmptyTrashConfirmation = false
+    @State private var itemToRename: NoteItem?
+    @State private var itemToMove: NoteItem?
+
+    // MARK: - Computed
+
+    private var currentItems: [NoteItem] {
+        notesDriveService.items(in: section, parentID: parentID)
+    }
+
+    private var navigationTitle: String {
+        if let parentID {
+            return notesDriveService.allItems.first(where: { $0.id == parentID })?.name ?? section.rawValue
+        }
+        return section.rawValue
+    }
+
+    // MARK: - Body
+
+    var body: some View {
+        Group {
+            if notesDriveService.isLoading && currentItems.isEmpty {
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if currentItems.isEmpty {
+                emptyStateView
+            } else {
+                noteList
+            }
+        }
+        .navigationTitle(navigationTitle)
+        .navigationBarTitleDisplayMode(.large)
+        .toolbar { toolbarContent }
+        .task(id: "\(section.rawValue)-\(parentID ?? "root")") {
+            await notesDriveService.loadSection(section, parentID: parentID)
+        }
+        .alert("Error", isPresented: Binding(
+            get: { notesDriveService.error != nil },
+            set: { if !$0 { notesDriveService.error = nil } }
+        )) {
+            Button("OK") { notesDriveService.error = nil }
+        } message: {
+            Text(notesDriveService.error ?? "")
+        }
+        .sheet(isPresented: $showCreateFolder) {
+            CreateFolderSheet(isPresented: $showCreateFolder, parentID: parentID) { folderName in
+                notesDriveService.createFolder(name: folderName, parentID: parentID)
+            }
+        }
+        .sheet(item: $itemToRename) { item in
+            RenameSheet(item: item) { newName in
+                notesDriveService.rename(itemID: item.id, to: newName)
+            }
+        }
+        .sheet(item: $itemToMove) { item in
+            MoveSheet(item: item) { newParentID in
+                notesDriveService.move(itemID: item.id, to: newParentID)
+            }
+            .environmentObject(notesDriveService)
+        }
+        .confirmationDialog(
+            "Empty Trash?",
+            isPresented: $showEmptyTrashConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Empty Trash", role: .destructive) {
+                notesDriveService.emptyTrash()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This will permanently delete all items in the Trash. This action cannot be undone.")
+        }
+    }
+
+    // MARK: - Note List
+
+    private var noteList: some View {
+        List {
+            ForEach(currentItems) { item in
+                noteRow(for: item)
+            }
+        }
+        .listStyle(.insetGrouped)
+    }
+
+    @ViewBuilder
+    private func noteRow(for item: NoteItem) -> some View {
+        Group {
+            if item.type == .folder {
+                NavigationLink(value: item) {
+                    NoteRowView(item: item)
+                }
+            } else {
+                NoteRowView(item: item)
+            }
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            trailingSwipeActions(for: item)
+        }
+        .swipeActions(edge: .leading, allowsFullSwipe: false) {
+            leadingSwipeActions(for: item)
+        }
+        .contextMenu {
+            contextMenuItems(for: item)
+        }
+    }
+
+    // MARK: - Swipe Actions
+
+    @ViewBuilder
+    private func trailingSwipeActions(for item: NoteItem) -> some View {
+        switch section {
+        case .myNotes:
+            Button(role: .destructive) {
+                notesDriveService.delete(itemID: item.id)
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        case .trash:
+            Button(role: .destructive) {
+                notesDriveService.delete(itemID: item.id)
+            } label: {
+                Label("Delete Forever", systemImage: "trash.slash")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func leadingSwipeActions(for item: NoteItem) -> some View {
+        switch section {
+        case .myNotes:
+            Button {
+                itemToRename = item
+            } label: {
+                Label("Rename", systemImage: "pencil")
+            }
+            .tint(.orange)
+        case .trash:
+            Button {
+                notesDriveService.restore(itemID: item.id)
+            } label: {
+                Label("Restore", systemImage: "arrow.uturn.backward")
+            }
+            .tint(.green)
+        }
+    }
+
+    // MARK: - Context Menu
+
+    @ViewBuilder
+    private func contextMenuItems(for item: NoteItem) -> some View {
+        switch section {
+        case .myNotes:
+            Button {
+                itemToRename = item
+            } label: {
+                Label("Rename", systemImage: "pencil")
+            }
+            Button {
+                itemToMove = item
+            } label: {
+                Label("Move", systemImage: "folder")
+            }
+            Divider()
+            Button(role: .destructive) {
+                notesDriveService.delete(itemID: item.id)
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        case .trash:
+            Button {
+                notesDriveService.restore(itemID: item.id)
+            } label: {
+                Label("Restore", systemImage: "arrow.uturn.backward")
+            }
+            Button(role: .destructive) {
+                notesDriveService.delete(itemID: item.id)
+            } label: {
+                Label("Delete Forever", systemImage: "trash.slash")
+            }
+        }
+    }
+
+    // MARK: - Toolbar
+
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        if section == .myNotes {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    showCreateFolder = true
+                } label: {
+                    Label("New Folder", systemImage: "folder.badge.plus")
+                }
+            }
+        }
+
+        if section == .trash {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    showEmptyTrashConfirmation = true
+                } label: {
+                    Text("Empty Trash")
+                        .foregroundStyle(.red)
+                }
+                .disabled(currentItems.isEmpty)
+            }
+        }
+    }
+
+    // MARK: - Empty State
+
+    private var emptyStateView: some View {
+        VStack(spacing: 16) {
+            Spacer()
+            Image(systemName: emptyStateIcon)
+                .font(.system(size: 60))
+                .foregroundStyle(.secondary)
+            Text(emptyStateTitle)
+                .font(.title2)
+                .fontWeight(.semibold)
+            Text(emptyStateSubtitle)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+            Spacer()
+        }
+    }
+
+    private var emptyStateIcon: String {
+        switch section {
+        case .myNotes: return "note.text"
+        case .trash:   return "trash"
+        }
+    }
+
+    private var emptyStateTitle: String {
+        switch section {
+        case .myNotes: return "No Notes Here"
+        case .trash:   return "Trash is Empty"
+        }
+    }
+
+    private var emptyStateSubtitle: String {
+        switch section {
+        case .myNotes: return "Tap the folder button to organize your notes."
+        case .trash:   return "Deleted notes are moved here before being permanently removed."
+        }
+    }
+}
+
+// MARK: - Preview
+
+#Preview {
+    NavigationStack {
+        NoteBrowserView(section: .myNotes, parentID: nil)
+            .environmentObject(NotesDriveService())
+    }
+}

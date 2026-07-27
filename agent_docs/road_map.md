@@ -164,18 +164,18 @@ Device can encrypt and decrypt notes.
 
 ⸻
 
-⬜ Epic 4 — Drive Integration
+✅ Epic 4 — Drive Integration
 
 The Notes app should browse only Markdown documents while using Drive as the storage backend.
 
 Features
 
-* ⬜ Browse Notes folder
-* ⬜ Create folders
-* ⬜ Rename
-* ⬜ Move
-* ⬜ Delete
-* ⬜ Restore from Trash
+* ✅ Browse Notes folder
+* ✅ Create folders
+* ✅ Rename
+* ✅ Move
+* ✅ Delete
+* ✅ Restore from Trash
 
 Milestone
 
