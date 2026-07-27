@@ -112,16 +112,16 @@ Phase 1 — Core Platform
 
 Goal: Deliver a secure shell that connects to the Neutrino ecosystem.
 
-⬜ Epic 1 — Application Shell
+✅ Epic 1 — Application Shell
 
 Features
 
-* ⬜ SwiftUI app
-* ⬜ Navigation
-* ⬜ Settings
-* ⬜ Recent Notes
-* ⬜ Offline Notes
-* ⬜ Favorites
+* ✅ SwiftUI app
+* ✅ Navigation
+* ✅ Settings
+* ✅ Recent Notes
+* ✅ Offline Notes
+* ✅ Favorites
 
 Milestone
 
