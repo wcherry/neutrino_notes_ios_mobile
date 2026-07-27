@@ -1,4 +1,8 @@
 name: NeutrinoNotes
+packages:
+  swift-sodium:
+    url: https://github.com/jedisct1/swift-sodium
+    from: "0.9.1"
 options:
   bundleIdPrefix: com.neutrino
   deploymentTarget:
@@ -11,6 +15,9 @@ targets:
     platform: iOS
     sources:
       - path: NeutrinoNotes
+    dependencies:
+      - package: swift-sodium
+        product: Sodium
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.neutrino.notes
@@ -34,9 +41,24 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
+        NSCameraUsageDescription: "Neutrino Notes needs camera access to scan QR codes for key import."
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
         LSSupportsOpeningDocumentsInPlace: false
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Neutrino Notes Key File
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - public.json
+        UTImportedTypeDeclarations:
+          - UTTypeIdentifier: com.neutrino.notes.keyfile
+            UTTypeConformsTo:
+              - public.json
+            UTTypeDescription: Neutrino Notes Key File
+            UTTypeTagSpecification:
+              public.filename-extension:
+                - json
 
   NeutrinoNotesTests:
     type: bundle.unit-test

@@ -146,17 +146,17 @@ Users remain authenticated after app restart.
 
 ⸻
 
-⬜ Epic 3 — Key Import & Encryption
+✅ Epic 3 — Key Import & Encryption
 
 Reuse the identical workflow from the Drive app.
 
 Features
 
-* ⬜ Import JSON key file
-* ⬜ Validate key pair
-* ⬜ Store in Keychain
+* ✅ Import JSON key file
+* ✅ Validate key pair
+* ✅ Store in Keychain
 * ⬜ Secure Enclave integration where available
-* ⬜ Delete temporary import file
+* ✅ Delete temporary import file
 
 Milestone
 

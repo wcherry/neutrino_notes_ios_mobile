@@ -7,7 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		08BBEFBB169BFE4EBA60F3DB /* KeychainServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE5256CCC96C4767EFEAAD0A /* KeychainServiceTests.swift */; };
+		362371247A7D1110B7F18195 /* KeyQRDecryptService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB6F598EC4D585DD519C49C2 /* KeyQRDecryptService.swift */; };
 		42617F748599C424F4FC4723 /* AuthServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BC0CB2BEDF004D4DC9E02E6 /* AuthServiceTests.swift */; };
+		58543D437FC2775457B82BB5 /* KeyQRImportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE53B4240000E5FE90F83C4A /* KeyQRImportView.swift */; };
 		627D1E554094DF40DC33BFC4 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D050897AB6922400F6B27C6 /* ContentView.swift */; };
 		750F7D3BFB11AE4B9F546A89 /* RecentsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E845A639EDC18142949B391 /* RecentsView.swift */; };
 		7AA2E3E03C1CCE05AF55530A /* ContentViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9129FE6A0678C4F2E85575B9 /* ContentViewTests.swift */; };
@@ -17,8 +20,15 @@
 		99B76BE51EA027EE3B6DA2F8 /* FavoritesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8E8C34EA1CBD53460351024 /* FavoritesView.swift */; };
 		9AFCBB7CC49D4503DC315AB3 /* OfflineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF79FFDD4161E0548FD3CB7C /* OfflineView.swift */; };
 		A10B3C928ACBCF99F6A76118 /* KeychainService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCEC4654CD49207EB1A3E8DE /* KeychainService.swift */; };
+		B2441ECBBCC51913463C4A57 /* QRScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B37775BD8A5172FD533AA46 /* QRScannerView.swift */; };
+		B64E2949EAB3843ADD92CAE7 /* KeyImportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B143415F753FAF186155C7E /* KeyImportView.swift */; };
+		B951FAC75EA2787DB01FDF38 /* FeatureFlags.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4075A8918BEAD59B18BB159C /* FeatureFlags.swift */; };
+		C3B19DB6AF34D12B7C23014C /* KeyImportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6486092B284D2187F1F263CD /* KeyImportService.swift */; };
+		C7E90C1FE8257D1CA4E2DEB4 /* KeyImportServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 447D9AB82FA723893475CFB4 /* KeyImportServiceTests.swift */; };
 		CEB50895F159366A3A416FB7 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56042424DD54491B63400931 /* SettingsView.swift */; };
 		D99AB3B20DFD322A765D3EEB /* NeutrinoNotesApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7219A737528AEE2A68BD1328 /* NeutrinoNotesApp.swift */; };
+		F4E6710B02FF7F6F63CC9F64 /* KeyQRDecryptServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BFA4C49AC84B143E70F7B6C /* KeyQRDecryptServiceTests.swift */; };
+		F98875DFF506D21B9CC2A7F6 /* Sodium in Frameworks */ = {isa = PBXBuildFile; productRef = 26FBE8C17640ABDEB8A9959D /* Sodium */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -32,31 +42,54 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		1BFA4C49AC84B143E70F7B6C /* KeyQRDecryptServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyQRDecryptServiceTests.swift; sourceTree = "<group>"; };
 		309C2714E4F8973D6A9F33E4 /* AuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
 		3BC0CB2BEDF004D4DC9E02E6 /* AuthServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthServiceTests.swift; sourceTree = "<group>"; };
+		4075A8918BEAD59B18BB159C /* FeatureFlags.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureFlags.swift; sourceTree = "<group>"; };
+		447D9AB82FA723893475CFB4 /* KeyImportServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyImportServiceTests.swift; sourceTree = "<group>"; };
 		56042424DD54491B63400931 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		59BE5787BA2AEFF0DF8391AD /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
+		6486092B284D2187F1F263CD /* KeyImportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyImportService.swift; sourceTree = "<group>"; };
+		6B37775BD8A5172FD533AA46 /* QRScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRScannerView.swift; sourceTree = "<group>"; };
 		7219A737528AEE2A68BD1328 /* NeutrinoNotesApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeutrinoNotesApp.swift; sourceTree = "<group>"; };
 		7AAF664EBEC0BFC2481E4353 /* NotesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesView.swift; sourceTree = "<group>"; };
+		7B143415F753FAF186155C7E /* KeyImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyImportView.swift; sourceTree = "<group>"; };
 		7E845A639EDC18142949B391 /* RecentsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentsView.swift; sourceTree = "<group>"; };
 		84E2E2884CBD2F901948AC7C /* NeutrinoNotesTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = NeutrinoNotesTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		8D050897AB6922400F6B27C6 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		9129FE6A0678C4F2E85575B9 /* ContentViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentViewTests.swift; sourceTree = "<group>"; };
 		D8E8C34EA1CBD53460351024 /* FavoritesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FavoritesView.swift; sourceTree = "<group>"; };
+		DE5256CCC96C4767EFEAAD0A /* KeychainServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainServiceTests.swift; sourceTree = "<group>"; };
+		EB6F598EC4D585DD519C49C2 /* KeyQRDecryptService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyQRDecryptService.swift; sourceTree = "<group>"; };
 		F8B69D25B8551210651031F8 /* NeutrinoNotes.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = NeutrinoNotes.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F9F6C01C3DABE7A021C65297 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		FCEC4654CD49207EB1A3E8DE /* KeychainService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainService.swift; sourceTree = "<group>"; };
+		FE53B4240000E5FE90F83C4A /* KeyQRImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyQRImportView.swift; sourceTree = "<group>"; };
 		FF79FFDD4161E0548FD3CB7C /* OfflineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		F96823FEF0C630E977198A20 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F98875DFF506D21B9CC2A7F6 /* Sodium in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		05D246C75C68EF692592444E /* Views */ = {
 			isa = PBXGroup;
 			children = (
 				D8E8C34EA1CBD53460351024 /* FavoritesView.swift */,
+				7B143415F753FAF186155C7E /* KeyImportView.swift */,
+				FE53B4240000E5FE90F83C4A /* KeyQRImportView.swift */,
 				59BE5787BA2AEFF0DF8391AD /* LoginView.swift */,
 				7AAF664EBEC0BFC2481E4353 /* NotesView.swift */,
 				FF79FFDD4161E0548FD3CB7C /* OfflineView.swift */,
+				6B37775BD8A5172FD533AA46 /* QRScannerView.swift */,
 				7E845A639EDC18142949B391 /* RecentsView.swift */,
 				56042424DD54491B63400931 /* SettingsView.swift */,
 			);
@@ -77,6 +110,8 @@
 			children = (
 				309C2714E4F8973D6A9F33E4 /* AuthService.swift */,
 				FCEC4654CD49207EB1A3E8DE /* KeychainService.swift */,
+				6486092B284D2187F1F263CD /* KeyImportService.swift */,
+				EB6F598EC4D585DD519C49C2 /* KeyQRDecryptService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -86,8 +121,19 @@
 			children = (
 				3BC0CB2BEDF004D4DC9E02E6 /* AuthServiceTests.swift */,
 				9129FE6A0678C4F2E85575B9 /* ContentViewTests.swift */,
+				DE5256CCC96C4767EFEAAD0A /* KeychainServiceTests.swift */,
+				447D9AB82FA723893475CFB4 /* KeyImportServiceTests.swift */,
+				1BFA4C49AC84B143E70F7B6C /* KeyQRDecryptServiceTests.swift */,
 			);
 			path = NeutrinoNotesTests;
+			sourceTree = "<group>";
+		};
+		D4CFD9A7EFBAF4D8E8C83BB9 /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				4075A8918BEAD59B18BB159C /* FeatureFlags.swift */,
+			);
+			path = Config;
 			sourceTree = "<group>";
 		};
 		D9396455AA9D6F5D23E546B3 /* NeutrinoNotes */ = {
@@ -96,6 +142,7 @@
 				8D050897AB6922400F6B27C6 /* ContentView.swift */,
 				F9F6C01C3DABE7A021C65297 /* Info.plist */,
 				7219A737528AEE2A68BD1328 /* NeutrinoNotesApp.swift */,
+				D4CFD9A7EFBAF4D8E8C83BB9 /* Config */,
 				29AD8EAEE9F1816CE35F7538 /* Services */,
 				05D246C75C68EF692592444E /* Views */,
 			);
@@ -119,6 +166,7 @@
 			buildConfigurationList = 0AE4133A6B64C706096529E7 /* Build configuration list for PBXNativeTarget "NeutrinoNotes" */;
 			buildPhases = (
 				52DC29ED725FC6649C9044FC /* Sources */,
+				F96823FEF0C630E977198A20 /* Frameworks */,
 			);
 			buildRules = (
 			);
@@ -126,6 +174,7 @@
 			);
 			name = NeutrinoNotes;
 			packageProductDependencies = (
+				26FBE8C17640ABDEB8A9959D /* Sodium */,
 			);
 			productName = NeutrinoNotes;
 			productReference = F8B69D25B8551210651031F8 /* NeutrinoNotes.app */;
@@ -173,6 +222,9 @@
 			);
 			mainGroup = 0EBCA1899D8EEED3C078B9B0;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				8576BD2452298409FC4C8B32 /* XCRemoteSwiftPackageReference "swift-sodium" */,
+			);
 			preferredProjectObjectVersion = 77;
 			projectDirPath = "";
 			projectRoot = "";
@@ -191,11 +243,17 @@
 				8A7AE2D7F1C95C9B8202906F /* AuthService.swift in Sources */,
 				627D1E554094DF40DC33BFC4 /* ContentView.swift in Sources */,
 				99B76BE51EA027EE3B6DA2F8 /* FavoritesView.swift in Sources */,
+				B951FAC75EA2787DB01FDF38 /* FeatureFlags.swift in Sources */,
+				C3B19DB6AF34D12B7C23014C /* KeyImportService.swift in Sources */,
+				B64E2949EAB3843ADD92CAE7 /* KeyImportView.swift in Sources */,
+				362371247A7D1110B7F18195 /* KeyQRDecryptService.swift in Sources */,
+				58543D437FC2775457B82BB5 /* KeyQRImportView.swift in Sources */,
 				A10B3C928ACBCF99F6A76118 /* KeychainService.swift in Sources */,
 				8F31E5C93F303AA01F2E5F5C /* LoginView.swift in Sources */,
 				D99AB3B20DFD322A765D3EEB /* NeutrinoNotesApp.swift in Sources */,
 				8331C532670FDA47F0CCDED3 /* NotesView.swift in Sources */,
 				9AFCBB7CC49D4503DC315AB3 /* OfflineView.swift in Sources */,
+				B2441ECBBCC51913463C4A57 /* QRScannerView.swift in Sources */,
 				750F7D3BFB11AE4B9F546A89 /* RecentsView.swift in Sources */,
 				CEB50895F159366A3A416FB7 /* SettingsView.swift in Sources */,
 			);
@@ -207,6 +265,9 @@
 			files = (
 				42617F748599C424F4FC4723 /* AuthServiceTests.swift in Sources */,
 				7AA2E3E03C1CCE05AF55530A /* ContentViewTests.swift in Sources */,
+				C7E90C1FE8257D1CA4E2DEB4 /* KeyImportServiceTests.swift in Sources */,
+				F4E6710B02FF7F6F63CC9F64 /* KeyQRDecryptServiceTests.swift in Sources */,
+				08BBEFBB169BFE4EBA60F3DB /* KeychainServiceTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -453,6 +514,25 @@
 			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		8576BD2452298409FC4C8B32 /* XCRemoteSwiftPackageReference "swift-sodium" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/jedisct1/swift-sodium";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.9.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		26FBE8C17640ABDEB8A9959D /* Sodium */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8576BD2452298409FC4C8B32 /* XCRemoteSwiftPackageReference "swift-sodium" */;
+			productName = Sodium;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 37928204E7A71BAB8626AC1B /* Project object */;
 }
