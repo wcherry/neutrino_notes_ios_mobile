@@ -7,12 +7,16 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		42617F748599C424F4FC4723 /* AuthServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BC0CB2BEDF004D4DC9E02E6 /* AuthServiceTests.swift */; };
 		627D1E554094DF40DC33BFC4 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D050897AB6922400F6B27C6 /* ContentView.swift */; };
 		750F7D3BFB11AE4B9F546A89 /* RecentsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E845A639EDC18142949B391 /* RecentsView.swift */; };
 		7AA2E3E03C1CCE05AF55530A /* ContentViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9129FE6A0678C4F2E85575B9 /* ContentViewTests.swift */; };
 		8331C532670FDA47F0CCDED3 /* NotesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AAF664EBEC0BFC2481E4353 /* NotesView.swift */; };
+		8A7AE2D7F1C95C9B8202906F /* AuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 309C2714E4F8973D6A9F33E4 /* AuthService.swift */; };
+		8F31E5C93F303AA01F2E5F5C /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59BE5787BA2AEFF0DF8391AD /* LoginView.swift */; };
 		99B76BE51EA027EE3B6DA2F8 /* FavoritesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8E8C34EA1CBD53460351024 /* FavoritesView.swift */; };
 		9AFCBB7CC49D4503DC315AB3 /* OfflineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF79FFDD4161E0548FD3CB7C /* OfflineView.swift */; };
+		A10B3C928ACBCF99F6A76118 /* KeychainService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCEC4654CD49207EB1A3E8DE /* KeychainService.swift */; };
 		CEB50895F159366A3A416FB7 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56042424DD54491B63400931 /* SettingsView.swift */; };
 		D99AB3B20DFD322A765D3EEB /* NeutrinoNotesApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7219A737528AEE2A68BD1328 /* NeutrinoNotesApp.swift */; };
 /* End PBXBuildFile section */
@@ -28,7 +32,10 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		309C2714E4F8973D6A9F33E4 /* AuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
+		3BC0CB2BEDF004D4DC9E02E6 /* AuthServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthServiceTests.swift; sourceTree = "<group>"; };
 		56042424DD54491B63400931 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		59BE5787BA2AEFF0DF8391AD /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 		7219A737528AEE2A68BD1328 /* NeutrinoNotesApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeutrinoNotesApp.swift; sourceTree = "<group>"; };
 		7AAF664EBEC0BFC2481E4353 /* NotesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesView.swift; sourceTree = "<group>"; };
 		7E845A639EDC18142949B391 /* RecentsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentsView.swift; sourceTree = "<group>"; };
@@ -38,6 +45,7 @@
 		D8E8C34EA1CBD53460351024 /* FavoritesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FavoritesView.swift; sourceTree = "<group>"; };
 		F8B69D25B8551210651031F8 /* NeutrinoNotes.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = NeutrinoNotes.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F9F6C01C3DABE7A021C65297 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		FCEC4654CD49207EB1A3E8DE /* KeychainService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainService.swift; sourceTree = "<group>"; };
 		FF79FFDD4161E0548FD3CB7C /* OfflineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -46,6 +54,7 @@
 			isa = PBXGroup;
 			children = (
 				D8E8C34EA1CBD53460351024 /* FavoritesView.swift */,
+				59BE5787BA2AEFF0DF8391AD /* LoginView.swift */,
 				7AAF664EBEC0BFC2481E4353 /* NotesView.swift */,
 				FF79FFDD4161E0548FD3CB7C /* OfflineView.swift */,
 				7E845A639EDC18142949B391 /* RecentsView.swift */,
@@ -63,9 +72,19 @@
 			);
 			sourceTree = "<group>";
 		};
+		29AD8EAEE9F1816CE35F7538 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				309C2714E4F8973D6A9F33E4 /* AuthService.swift */,
+				FCEC4654CD49207EB1A3E8DE /* KeychainService.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
 		93B3E880E4F6019088A07950 /* NeutrinoNotesTests */ = {
 			isa = PBXGroup;
 			children = (
+				3BC0CB2BEDF004D4DC9E02E6 /* AuthServiceTests.swift */,
 				9129FE6A0678C4F2E85575B9 /* ContentViewTests.swift */,
 			);
 			path = NeutrinoNotesTests;
@@ -77,6 +96,7 @@
 				8D050897AB6922400F6B27C6 /* ContentView.swift */,
 				F9F6C01C3DABE7A021C65297 /* Info.plist */,
 				7219A737528AEE2A68BD1328 /* NeutrinoNotesApp.swift */,
+				29AD8EAEE9F1816CE35F7538 /* Services */,
 				05D246C75C68EF692592444E /* Views */,
 			);
 			path = NeutrinoNotes;
@@ -168,8 +188,11 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				8A7AE2D7F1C95C9B8202906F /* AuthService.swift in Sources */,
 				627D1E554094DF40DC33BFC4 /* ContentView.swift in Sources */,
 				99B76BE51EA027EE3B6DA2F8 /* FavoritesView.swift in Sources */,
+				A10B3C928ACBCF99F6A76118 /* KeychainService.swift in Sources */,
+				8F31E5C93F303AA01F2E5F5C /* LoginView.swift in Sources */,
 				D99AB3B20DFD322A765D3EEB /* NeutrinoNotesApp.swift in Sources */,
 				8331C532670FDA47F0CCDED3 /* NotesView.swift in Sources */,
 				9AFCBB7CC49D4503DC315AB3 /* OfflineView.swift in Sources */,
@@ -182,6 +205,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				42617F748599C424F4FC4723 /* AuthServiceTests.swift in Sources */,
 				7AA2E3E03C1CCE05AF55530A /* ContentViewTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

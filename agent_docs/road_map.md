@@ -129,16 +129,16 @@ Application launches with navigation and empty states.
 
 ⸻
 
-⬜ Epic 2 — Authentication
+✅ Epic 2 — Authentication
 
 Reuse the browser-based login flow from Neutrino Drive.
 
 Features
 
-* ⬜ Login
-* ⬜ Refresh tokens
-* ⬜ Logout
-* ⬜ Session persistence
+* ✅ Login
+* ✅ Refresh tokens
+* ✅ Logout
+* ✅ Session persistence
 
 Milestone
 

@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct SettingsView: View {
+    @EnvironmentObject var authService: AuthService
+
     var body: some View {
         List {
             Section {
@@ -14,6 +16,17 @@ struct SettingsView: View {
                 .listRowBackground(Color.clear)
                 .padding(.vertical, 32)
             }
+
+            Section {
+                Button(role: .destructive) {
+                    authService.logout()
+                } label: {
+                    HStack {
+                        Image(systemName: "rectangle.portrait.and.arrow.right")
+                        Text("Sign Out")
+                    }
+                }
+            }
         }
         .navigationTitle("Settings")
     }
@@ -22,5 +35,6 @@ struct SettingsView: View {
 #Preview {
     NavigationStack {
         SettingsView()
+            .environmentObject(AuthService())
     }
 }
