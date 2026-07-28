@@ -5,13 +5,11 @@ struct ContentView: View {
 
     var body: some View {
         TabView(selection: $selectedTab) {
-            NavigationStack {
-                NotesView()
-            }
-            .tabItem {
-                Label("Notes", systemImage: "note.text")
-            }
-            .tag(0)
+            NotesView()
+                .tabItem {
+                    Label("Notes", systemImage: "note.text")
+                }
+                .tag(0)
 
             NavigationStack {
                 RecentsView()
@@ -52,4 +50,5 @@ struct ContentView: View {
     ContentView()
         .environmentObject(AuthService())
         .environmentObject(NotesDriveService())
+        .environmentObject(NoteContentService())
 }

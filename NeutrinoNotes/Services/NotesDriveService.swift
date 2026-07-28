@@ -23,7 +23,7 @@ enum NotesDriveError: LocalizedError {
 
 // Browses and organizes the Markdown documents stored in Neutrino Drive. Reuses the existing
 // Drive folder/file/trash APIs — the Notes app has no backend of its own — and filters every
-// response down to folders and text/markdown files (see NoteItem.isVisibleInNotes).
+// response down to folders and Drive's note MIME type (see NoteItem.isVisibleInNotes).
 @MainActor
 final class NotesDriveService: ObservableObject {
 
@@ -114,24 +114,35 @@ final class NotesDriveService: ObservableObject {
             case .myNotes:
                 let response: APIFolderContentsResponse
                 if let id = parentID {
+                    // /folders/{id} has no server-side type filter — rely on the client-side
+                    // isVisibleInNotes filter below.
                     response = try await get("/api/v1/drive/folders/\(id)")
                 } else {
-                    response = try await get("/api/v1/drive")
+                    // Root listing supports filtering to a single MIME-mapped type server-side.
+                    response = try await get("/api/v1/drive?type=note")
                 }
                 let folders = response.folders.map { NoteItem(folder: $0) }
-                let files = response.files.map { NoteItem(file: $0) }.filter(NoteItem.isVisibleInNotes)
+                let allFiles = response.files.map { NoteItem(file: $0) }
+                let files = allFiles.filter(NoteItem.isVisibleInNotes)
+                logger.debug("loadSection myNotes: API returned \(response.folders.count) folders, \(response.files.count) files: \(allFiles.map { "\($0.name) [\($0.mimeType ?? "nil")]" }.joined(separator: ", "), privacy: .public)")
+                if allFiles.count != files.count {
+                    let dropped = allFiles.filter { !NoteItem.isVisibleInNotes($0) }
+                    logger.debug("loadSection myNotes: filtered out \(dropped.count) non-Markdown file(s): \(dropped.map { "\($0.name) [\($0.mimeType ?? "nil")]" }.joined(separator: ", "), privacy: .public)")
+                }
                 // Replace cached items for this parent to avoid stale duplicates.
                 allItems.removeAll { $0.parentID == parentID }
                 allItems.append(contentsOf: folders)
                 allItems.append(contentsOf: files)
-                logger.debug("loadSection myNotes: loaded \(folders.count) folders, \(files.count) Markdown files")
+                logger.debug("loadSection myNotes: displaying \(folders.count) folders, \(files.count) Markdown files")
 
             case .trash:
                 let response: APITrashContentsResponse = try await get("/api/v1/drive/trash")
                 let folders = response.folders.map { NoteItem(trashFolder: $0) }
-                let files = response.files.map { NoteItem(trashFile: $0) }.filter(NoteItem.isVisibleInNotes)
+                let allFiles = response.files.map { NoteItem(trashFile: $0) }
+                let files = allFiles.filter(NoteItem.isVisibleInNotes)
+                logger.debug("loadSection trash: API returned \(response.folders.count) folders, \(response.files.count) files: \(allFiles.map { "\($0.name) [\($0.mimeType ?? "nil")]" }.joined(separator: ", "), privacy: .public)")
                 trashItems = folders + files
-                logger.debug("loadSection trash: loaded \(folders.count) folders, \(files.count) Markdown files")
+                logger.debug("loadSection trash: displaying \(folders.count) folders, \(files.count) Markdown files")
             }
         } catch {
             logger.error("loadSection \(section.rawValue, privacy: .public) failed: \(error, privacy: .public)")
@@ -300,6 +311,21 @@ final class NotesDriveService: ObservableObject {
         }
     }
 
+    /// Called by NoteContentService after successfully creating a note's content, to reflect
+    /// the new file in allItems.
+    func noteWasCreated(_ item: NoteItem) {
+        allItems.append(item)
+        logger.debug("noteWasCreated: id=\(item.id, privacy: .public) name=\(item.name, privacy: .public)")
+    }
+
+    /// Called by the editor after a successful autosave, to keep the browser's size/date in sync.
+    func noteContentWasSaved(itemID: String, size: Int64, modifiedAt: Date) {
+        if let idx = index(of: itemID) {
+            allItems[idx].size = size
+            allItems[idx].modifiedAt = modifiedAt
+        }
+    }
+
     // MARK: - Ancestry Check
 
     func isDescendant(potentialChildID: String, ofFolderID folderID: String) -> Bool {
@@ -370,29 +396,28 @@ final class NotesDriveService: ObservableObject {
     /// Refreshes the token if needed, injects it, executes the request, and decodes the response.
     private func perform<T: Decodable>(_ req: URLRequest) async throws -> T {
         let req = try await authorized(req)
-        logger.debug("--> \(req.httpMethod ?? "?", privacy: .public) \(req.url?.path ?? "?", privacy: .public)")
+        logger.debug("--> \(req.httpMethod ?? "?", privacy: .public) \(req.url?.absoluteString ?? "?", privacy: .public)")
         let data: Data
         let response: URLResponse
         do {
             (data, response) = try await URLSession.shared.data(for: req)
         } catch {
-            logger.error("network error: \(req.url?.path ?? "?", privacy: .public) \(error, privacy: .public)")
+            logger.error("network error: \(req.url?.absoluteString ?? "?", privacy: .public) \(error, privacy: .public)")
             throw NotesDriveError.networkError(underlying: error)
         }
         guard let http = response as? HTTPURLResponse else {
             throw NotesDriveError.serverError(statusCode: 0)
         }
-        logger.debug("<-- \(http.statusCode) \(req.url?.path ?? "?", privacy: .public)")
+        let rawBody = String(data: data, encoding: .utf8) ?? "(binary, \(data.count) bytes)"
+        logger.debug("<-- \(http.statusCode) \(req.url?.absoluteString ?? "?", privacy: .public) body=\(rawBody, privacy: .public)")
         guard (200...299).contains(http.statusCode) else {
-            let body = String(data: data, encoding: .utf8) ?? "(binary)"
-            logger.error("server error \(http.statusCode) \(req.url?.path ?? "?", privacy: .public): \(body, privacy: .public)")
+            logger.error("server error \(http.statusCode) \(req.url?.absoluteString ?? "?", privacy: .public): \(rawBody, privacy: .public)")
             throw NotesDriveError.serverError(statusCode: http.statusCode)
         }
         do {
             return try Self.decoder.decode(T.self, from: data)
         } catch {
-            let body = String(data: data, encoding: .utf8) ?? "(binary)"
-            logger.error("decode error \(req.url?.path ?? "?", privacy: .public): \(error, privacy: .public) body=\(body, privacy: .public)")
+            logger.error("decode error \(req.url?.absoluteString ?? "?", privacy: .public): \(error, privacy: .public) body=\(rawBody, privacy: .public)")
             throw NotesDriveError.decodingError(underlying: error)
         }
     }

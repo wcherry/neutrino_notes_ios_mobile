@@ -187,18 +187,18 @@ Phase 2 — Markdown Editing
 
 Goal: Build a first-class Markdown editor.
 
-⬜ Epic 5 — Editor
+✅ Epic 5 — Editor
 
 Features
 
-* ⬜ Live Markdown editing
-* ⬜ Autosave
-* ⬜ Undo/Redo
-* ⬜ Word count
-* ⬜ Character count
-* ⬜ Reading time
-* ⬜ Find
-* ⬜ Replace
+* ✅ Live Markdown editing
+* ✅ Autosave
+* ✅ Undo/Redo
+* ✅ Word count
+* ✅ Character count
+* ✅ Reading time
+* ✅ Find
+* ✅ Replace
 
 Milestone
 

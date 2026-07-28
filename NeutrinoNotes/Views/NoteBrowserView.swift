@@ -10,17 +10,23 @@ struct NoteBrowserView: View {
 
     let section: NotesSection
     let parentID: String?
+    /// Called after a new note is successfully created, so the caller can push straight into
+    /// its editor. Defaults to a no-op for previews and callers that don't need it.
+    var onNoteCreated: (NoteItem) -> Void = { _ in }
 
     // MARK: - Environment
 
     @EnvironmentObject var notesDriveService: NotesDriveService
+    @EnvironmentObject var noteContentService: NoteContentService
 
     // MARK: - State
 
     @State private var showCreateFolder = false
+    @State private var showCreateNote = false
     @State private var showEmptyTrashConfirmation = false
     @State private var itemToRename: NoteItem?
     @State private var itemToMove: NoteItem?
+    @State private var createNoteError: String?
 
     // MARK: - Computed
 
@@ -67,6 +73,19 @@ struct NoteBrowserView: View {
                 notesDriveService.createFolder(name: folderName, parentID: parentID)
             }
         }
+        .sheet(isPresented: $showCreateNote) {
+            CreateNoteSheet(isPresented: $showCreateNote) { noteName in
+                Task { await createNote(named: noteName) }
+            }
+        }
+        .alert("Couldn't Create Note", isPresented: Binding(
+            get: { createNoteError != nil },
+            set: { if !$0 { createNoteError = nil } }
+        )) {
+            Button("OK") { createNoteError = nil }
+        } message: {
+            Text(createNoteError ?? "")
+        }
         .sheet(item: $itemToRename) { item in
             RenameSheet(item: item) { newName in
                 notesDriveService.rename(itemID: item.id, to: newName)
@@ -101,12 +120,15 @@ struct NoteBrowserView: View {
             }
         }
         .listStyle(.insetGrouped)
+        .refreshable {
+            await notesDriveService.loadSection(section, parentID: parentID)
+        }
     }
 
     @ViewBuilder
     private func noteRow(for item: NoteItem) -> some View {
         Group {
-            if item.type == .folder {
+            if item.type == .folder || FeatureFlags.markdownEditor {
                 NavigationLink(value: item) {
                     NoteRowView(item: item)
                 }
@@ -206,7 +228,16 @@ struct NoteBrowserView: View {
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         if section == .myNotes {
-            ToolbarItem(placement: .primaryAction) {
+            if FeatureFlags.markdownEditor {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        showCreateNote = true
+                    } label: {
+                        Label("New Note", systemImage: "square.and.pencil")
+                    }
+                }
+            }
+            ToolbarItem(placement: .secondaryAction) {
                 Button {
                     showCreateFolder = true
                 } label: {
@@ -231,20 +262,28 @@ struct NoteBrowserView: View {
     // MARK: - Empty State
 
     private var emptyStateView: some View {
-        VStack(spacing: 16) {
-            Spacer()
-            Image(systemName: emptyStateIcon)
-                .font(.system(size: 60))
-                .foregroundStyle(.secondary)
-            Text(emptyStateTitle)
-                .font(.title2)
-                .fontWeight(.semibold)
-            Text(emptyStateSubtitle)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 32)
-            Spacer()
+        // A ScrollView (rather than a bare VStack) is required for .refreshable to attach —
+        // pull-to-refresh should work even when the current folder has nothing in it yet.
+        ScrollView {
+            VStack(spacing: 16) {
+                Spacer()
+                Image(systemName: emptyStateIcon)
+                    .font(.system(size: 60))
+                    .foregroundStyle(.secondary)
+                Text(emptyStateTitle)
+                    .font(.title2)
+                    .fontWeight(.semibold)
+                Text(emptyStateSubtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+                Spacer()
+            }
+            .frame(maxWidth: .infinity, minHeight: 400)
+        }
+        .refreshable {
+            await notesDriveService.loadSection(section, parentID: parentID)
         }
     }
 
@@ -264,8 +303,20 @@ struct NoteBrowserView: View {
 
     private var emptyStateSubtitle: String {
         switch section {
-        case .myNotes: return "Tap the folder button to organize your notes."
+        case .myNotes: return "Tap the note button to create your first Markdown note."
         case .trash:   return "Deleted notes are moved here before being permanently removed."
+        }
+    }
+
+    // MARK: - Note Creation
+
+    private func createNote(named name: String) async {
+        do {
+            let item = try await noteContentService.createNote(name: name, parentID: parentID)
+            notesDriveService.noteWasCreated(item)
+            onNoteCreated(item)
+        } catch {
+            createNoteError = error.localizedDescription
         }
     }
 }
@@ -276,5 +327,6 @@ struct NoteBrowserView: View {
     NavigationStack {
         NoteBrowserView(section: .myNotes, parentID: nil)
             .environmentObject(NotesDriveService())
+            .environmentObject(NoteContentService())
     }
 }

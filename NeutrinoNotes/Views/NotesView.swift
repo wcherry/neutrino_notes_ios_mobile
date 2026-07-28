@@ -3,13 +3,15 @@ import SwiftUI
 // MARK: - NotesView
 
 /// Root view for the Notes tab — browses the folders and Markdown documents stored
-/// in Neutrino Drive.
+/// in Neutrino Drive, and owns navigation into folders and the note editor.
 struct NotesView: View {
 
     // MARK: - Environment / State
 
     @EnvironmentObject var notesDriveService: NotesDriveService
+    @EnvironmentObject var noteContentService: NoteContentService
     @State private var selectedSection: NotesSection = .myNotes
+    @State private var path = NavigationPath()
 
     // MARK: - Body
 
@@ -17,30 +19,44 @@ struct NotesView: View {
         if FeatureFlags.driveIntegration {
             featureFlagEnabledBody
         } else {
-            legacyPlaceholder
+            NavigationStack {
+                legacyPlaceholder
+            }
         }
     }
 
     // MARK: - Feature-flagged Implementation
 
     private var featureFlagEnabledBody: some View {
-        NoteBrowserView(section: selectedSection, parentID: nil)
-            .environmentObject(notesDriveService)
-            .navigationDestination(for: NoteItem.self) { destination in
-                NoteBrowserView(section: selectedSection, parentID: destination.id)
-                    .environmentObject(notesDriveService)
-            }
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Picker("Section", selection: $selectedSection) {
-                        ForEach(NotesSection.allCases) { section in
-                            Text(section.rawValue).tag(section)
-                        }
+        NavigationStack(path: $path) {
+            browserView(parentID: nil)
+                .navigationDestination(for: NoteItem.self) { destination in
+                    if destination.type == .folder {
+                        browserView(parentID: destination.id)
+                    } else {
+                        NoteEditorView(item: destination)
                     }
-                    .pickerStyle(.segmented)
-                    .frame(maxWidth: 320)
                 }
-            }
+                .toolbar {
+                    ToolbarItem(placement: .principal) {
+                        Picker("Section", selection: $selectedSection) {
+                            ForEach(NotesSection.allCases) { section in
+                                Text(section.rawValue).tag(section)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(maxWidth: 320)
+                    }
+                }
+        }
+    }
+
+    private func browserView(parentID: String?) -> some View {
+        NoteBrowserView(section: selectedSection, parentID: parentID) { newNote in
+            path.append(newNote)
+        }
+        .environmentObject(notesDriveService)
+        .environmentObject(noteContentService)
     }
 
     // MARK: - Legacy Placeholder
@@ -59,8 +75,8 @@ struct NotesView: View {
 // MARK: - Preview
 
 #Preview {
-    NavigationStack {
-        NotesView()
-    }
-    .environmentObject(NotesDriveService())
+    NotesView()
+        .environmentObject(AuthService())
+        .environmentObject(NotesDriveService())
+        .environmentObject(NoteContentService())
 }

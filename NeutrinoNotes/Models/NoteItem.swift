@@ -16,7 +16,12 @@ struct NoteItem: Identifiable, Hashable {
 
     /// The only file MIME type the Notes app browses — everything else lives in Drive but is
     /// out of scope for this app, per the roadmap: "browse only Markdown documents."
-    static let markdownMIME = "text/markdown"
+    ///
+    /// This is Drive's proprietary type for Markdown notes (the same value the `type=note`
+    /// server-side filter matches on) — not the raw `text/markdown` media type. Confirmed
+    /// against a live server response: an uploaded note round-trips as
+    /// `mimeType: "application/x-neutrino-note"`.
+    static let markdownMIME = "application/x-neutrino-note"
 
     // MARK: - Properties
 
@@ -27,7 +32,7 @@ struct NoteItem: Identifiable, Hashable {
     var size: Int64?            // bytes; nil for folders
     var modifiedAt: Date
     var isTrashed: Bool
-    var mimeType: String?       // "text/markdown" for files; nil for folders
+    var mimeType: String?       // "application/x-neutrino-note" for files; nil for folders
 
     // MARK: - Computed
 

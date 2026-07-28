@@ -59,7 +59,7 @@ final class AuthService: ObservableObject {
         static var authorizeURL: String { baseURL + "/api/v1/oauth/authorize" }
         static var tokenURL:     String { baseURL + "/api/v1/oauth/token" }
         static let clientID    = "neutrino-notes-ios"
-        static let redirectURI = "neutrinonotes://oauth/callback"
+        static let redirectURI = "neutrino://oauth/callback"
     }
 
     // MARK: - Init

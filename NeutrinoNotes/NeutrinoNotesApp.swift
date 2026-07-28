@@ -4,14 +4,17 @@ import SwiftUI
 struct NeutrinoNotesApp: App {
     @StateObject private var authService = AuthService()
     @StateObject private var notesDriveService = NotesDriveService()
+    @StateObject private var noteContentService = NoteContentService()
 
     var body: some Scene {
         WindowGroup {
             RootContentView()
                 .environmentObject(authService)
                 .environmentObject(notesDriveService)
+                .environmentObject(noteContentService)
                 .task {
                     notesDriveService.authService = authService
+                    noteContentService.authService = authService
                 }
         }
     }
