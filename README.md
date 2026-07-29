@@ -18,6 +18,7 @@ A secure, offline-capable Markdown editor for the Neutrino ecosystem. Built with
 | Epic 3 | Key Import & Encryption | COMPLETE |
 | Epic 4 | Drive Integration | COMPLETE |
 | Epic 5 | Editor | COMPLETE |
+| Epic 6 | Markdown Rendering | COMPLETE |
 
 See [agent_docs/road_map.md](agent_docs/road_map.md) for the full roadmap.
 
@@ -40,3 +41,5 @@ Authentication reuses Neutrino Drive's three-step OAuth PKCE flow (`AuthService`
 The Notes tab is backed by `NotesDriveService`, which reuses Neutrino Drive's existing folder/file/trash REST APIs — there is no separate Notes backend. It filters every response down to folders and `text/markdown` files, and exposes optimistic `createFolder`/`rename`/`move`/`delete`/`restore` mutations (`NoteBrowserView`, `CreateFolderSheet`, `RenameSheet`, `MoveSheet`) so users can organize their notes exactly as they do on the web.
 
 Note *content* is handled separately by `NoteContentService`, which mirrors the Drive app's upload/download encryption protocol exactly (XChaCha20-Poly1305 secretstream for the body, `crypto_box_seal` for the per-file key) so notes are readable by the web app and vice versa. `NoteEditorView` provides live Markdown editing over a plain `TextEditor`, debounced autosave via the Drive `PUT /files/{id}/autosave` endpoint, system undo/redo, word/character counts and estimated reading time (`NoteTextStats`), and find & replace via SwiftUI's `findNavigator`.
+
+Markdown rendering (`NeutrinoNotes/Rendering/`) is layered on top of Apple's [`swift-markdown`](https://github.com/swiftlang/swift-markdown) package, which wraps `cmark-gfm` for CommonMark + GFM tables/strikethrough/task-lists. `MarkdownParser` walks the resulting AST into a pure-Swift, unit-testable model (`MarkdownModel.swift`) and layers a hand-rolled pre/post-processing pass on top for footnotes (`[^1]` refs and `[^1]: ...` definitions), which aren't part of GFM. `MarkdownInlineRenderer` turns inline runs into `AttributedString` (bold/italic/strikethrough/code/links/footnote markers), and `MarkdownView` walks the block model into native SwiftUI (headings, nested lists, read-only task-list checkboxes, `Grid`-based tables, code blocks, block quotes, thematic breaks, `AsyncImage`, tappable links, and a footnotes section). `NoteEditorView` exposes this behind a minimal Preview toggle in its toolbar that swaps the `TextEditor` for `MarkdownView`; this is intentionally a placeholder for Epic 7's Edit/Preview/Split View mode switching, not a finished UI.

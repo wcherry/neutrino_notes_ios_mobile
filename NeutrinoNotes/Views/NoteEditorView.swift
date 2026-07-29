@@ -27,6 +27,9 @@ struct NoteEditorView: View {
     @State private var saveStatus: SaveStatus = .idle
     @State private var pendingSaveTask: Task<Void, Never>?
     @State private var showFindNavigator = false
+    // Epic 6 placeholder: a minimal Preview toggle so rendering can be seen at all.
+    // Epic 7 will replace this with real Edit/Preview/Split View mode switching.
+    @State private var isPreviewMode = false
 
     private enum SaveStatus: Equatable {
         case idle
@@ -62,11 +65,15 @@ struct NoteEditorView: View {
 
     private var editorBody: some View {
         VStack(spacing: 0) {
-            TextEditor(text: $text)
-                .font(.system(.body, design: .monospaced))
-                .onChange(of: text) { _ in scheduleAutosave() }
-                .findNavigator(isPresented: $showFindNavigator)
-                .replaceDisabled(false)
+            if isPreviewMode {
+                MarkdownView(text: text)
+            } else {
+                TextEditor(text: $text)
+                    .font(.system(.body, design: .monospaced))
+                    .onChange(of: text) { _ in scheduleAutosave() }
+                    .findNavigator(isPresented: $showFindNavigator)
+                    .replaceDisabled(false)
+            }
             statusBar
         }
     }
@@ -119,6 +126,18 @@ struct NoteEditorView: View {
                 showFindNavigator = true
             } label: {
                 Label("Find & Replace", systemImage: "magnifyingglass")
+            }
+            // Find & Replace targets the TextEditor, which isn't shown in Preview mode.
+            .disabled(isPreviewMode)
+
+            Button {
+                isPreviewMode.toggle()
+            } label: {
+                if isPreviewMode {
+                    Label("Edit", systemImage: "eye.slash")
+                } else {
+                    Label("Preview", systemImage: "eye")
+                }
             }
         }
         ToolbarItemGroup(placement: .secondaryAction) {
