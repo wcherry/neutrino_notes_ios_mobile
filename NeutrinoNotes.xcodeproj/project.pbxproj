@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 63;
+	objectVersion = 77;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -93,7 +93,7 @@
 		DD63F5DC6FFA65774D73C6FD /* NoteEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteEditorView.swift; sourceTree = "<group>"; };
 		DE5256CCC96C4767EFEAAD0A /* KeychainServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainServiceTests.swift; sourceTree = "<group>"; };
 		EB6F598EC4D585DD519C49C2 /* KeyQRDecryptService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyQRDecryptService.swift; sourceTree = "<group>"; };
-		F8B69D25B8551210651031F8 /* NeutrinoNotes.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NeutrinoNotes.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F8B69D25B8551210651031F8 /* NeutrinoNotes.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = NeutrinoNotes.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F9F6C01C3DABE7A021C65297 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		FCEC4654CD49207EB1A3E8DE /* KeychainService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainService.swift; sourceTree = "<group>"; };
 		FE53B4240000E5FE90F83C4A /* KeyQRImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyQRImportView.swift; sourceTree = "<group>"; };
@@ -224,6 +224,7 @@
 				52DC29ED725FC6649C9044FC /* Sources */,
 				914312449B5D0CB159D30AEF /* Resources */,
 				F96823FEF0C630E977198A20 /* Frameworks */,
+				E2578DC8719055D047C4BA50 /* Debug: Enable File Sharing (Simulator only) */,
 			);
 			buildRules = (
 			);
@@ -265,6 +266,7 @@
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
 					CF78BD5DD7B562C6827FD9DB = {
+						DevelopmentTeam = 46KWJJ63FU;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -282,6 +284,7 @@
 			packageReferences = (
 				8576BD2452298409FC4C8B32 /* XCRemoteSwiftPackageReference "swift-sodium" */,
 			);
+			preferredProjectObjectVersion = 77;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -301,6 +304,28 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		E2578DC8719055D047C4BA50 /* Debug: Enable File Sharing (Simulator only) */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Debug: Enable File Sharing (Simulator only)";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Exposes the app's own Documents/ folder under Files > On My iPhone, so a\n# key file copied in via `simcp` is visible to the in-app document picker.\n# Simulator-only and Debug-only — never touches Release/TestFlight builds.\nif [ \"$CONFIGURATION\" = \"Debug\" ] && [ \"$PLATFORM_NAME\" = \"iphonesimulator\" ]; then\n  PLIST=\"$CODESIGNING_FOLDER_PATH/Info.plist\"\n  /usr/libexec/PlistBuddy -c \"Add :UIFileSharingEnabled bool true\" \"$PLIST\" 2>/dev/null \\\n    || /usr/libexec/PlistBuddy -c \"Set :UIFileSharingEnabled true\" \"$PLIST\"\n  /usr/libexec/PlistBuddy -c \"Set :LSSupportsOpeningDocumentsInPlace true\" \"$PLIST\"\nfi\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		52DC29ED725FC6649C9044FC /* Sources */ = {
