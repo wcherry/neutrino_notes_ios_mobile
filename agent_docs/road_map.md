@@ -277,15 +277,17 @@ Offline editing behaves identically to the web app.
 
 ⸻
 
-⬜ Epic 10 — Version History
+✅ Epic 10 — Version History
 
 Reuse existing Drive version APIs.
 
 Features
 
-* ⬜ Previous versions
-* ⬜ Restore version
-* ⬜ Compare versions
+* ✅ Previous versions
+* ✅ Restore version
+* ✅ Compare versions
+* ✅ Save named version (Drive's autosave endpoint doesn't snapshot, so the other three
+  need an explicit save to have anything to work with — same as the web app)
 
 Milestone
 

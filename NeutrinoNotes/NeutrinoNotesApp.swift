@@ -8,6 +8,7 @@ struct NeutrinoNotesApp: App {
     @StateObject private var networkMonitor: NetworkMonitor
     @StateObject private var offlineStore: OfflineStore
     @StateObject private var syncEngine: SyncEngine
+    @StateObject private var versionHistoryService = VersionHistoryService()
 
     @Environment(\.scenePhase) private var scenePhase
 
@@ -32,10 +33,13 @@ struct NeutrinoNotesApp: App {
                 .environmentObject(networkMonitor)
                 .environmentObject(offlineStore)
                 .environmentObject(syncEngine)
+                .environmentObject(versionHistoryService)
                 .task {
                     notesDriveService.authService = authService
                     noteContentService.authService = authService
                     offlineStore.noteContentService = noteContentService
+                    versionHistoryService.authService = authService
+                    versionHistoryService.noteContentService = noteContentService
                     syncEngine.start()
                 }
         }

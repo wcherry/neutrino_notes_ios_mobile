@@ -414,5 +414,6 @@ struct NoteBrowserView: View {
             .environmentObject(NotesDriveService())
             .environmentObject(NoteContentService())
             .environmentObject(OfflineStore())
+            .environmentObject(VersionHistoryService())
     }
 }

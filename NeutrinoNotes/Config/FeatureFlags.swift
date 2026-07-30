@@ -14,4 +14,9 @@ enum FeatureFlags {
     /// Set to true to enable the Epic 9 Offline Editing feature (downloading notes for offline
     /// access, editing without a connection, and syncing queued changes when connectivity returns).
     static let offlineEditing: Bool = true
+
+    /// Set to true to enable the Epic 10 Version History feature (saving named versions,
+    /// browsing previous versions, restoring one, and comparing two).
+    /// When false, the editor's version actions are hidden.
+    static let versionHistory: Bool = true
 }
