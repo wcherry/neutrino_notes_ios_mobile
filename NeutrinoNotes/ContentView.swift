@@ -51,4 +51,5 @@ struct ContentView: View {
         .environmentObject(AuthService())
         .environmentObject(NotesDriveService())
         .environmentObject(NoteContentService())
+        .environmentObject(SyncEngine())
 }
