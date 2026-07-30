@@ -15,9 +15,9 @@ struct NoteEditorView: View {
 
     @EnvironmentObject var notesDriveService: NotesDriveService
     @EnvironmentObject var noteContentService: NoteContentService
-    @EnvironmentObject var syncEngine: SyncEngine
+    @EnvironmentObject var offlineStore: OfflineStore
+    @EnvironmentObject var networkMonitor: NetworkMonitor
     @Environment(\.undoManager) private var undoManager
-    @Environment(\.scenePhase) private var scenePhase
 
     // MARK: - State
 
@@ -29,19 +29,25 @@ struct NoteEditorView: View {
     @State private var saveStatus: SaveStatus = .idle
     @State private var pendingSaveTask: Task<Void, Never>?
     @State private var showFindNavigator = false
-    /// The item's `modifiedAt` as of when this editing session started (or last saved) — used
-    /// to detect whether the server copy has advanced past what this device knows about.
-    @State private var loadedModifiedAt: Date?
-    @State private var activeConflict: SyncConflict?
     // Epic 6 placeholder: a minimal Preview toggle so rendering can be seen at all.
     // Epic 7 will replace this with real Edit/Preview/Split View mode switching.
     @State private var isPreviewMode = false
+    /// True when this session's text came from the offline cache rather than the server — either
+    /// because the device is offline, or because the network load failed and a cached copy existed.
+    /// Saves then go to the cache and are picked up by SyncEngine, so the edit is durable either way.
+    @State private var usingOfflineCopy = false
 
     private enum SaveStatus: Equatable {
         case idle
         case saving
         case saved
+        case savedOffline
         case failed(String)
+    }
+
+    /// True when the offline-editing UI should engage for this session.
+    private var isOfflineEditingActive: Bool {
+        FeatureFlags.offlineEditing && !networkMonitor.isOnline
     }
 
     // MARK: - Body
@@ -65,22 +71,13 @@ struct NoteEditorView: View {
             pendingSaveTask?.cancel()
             if isDirty { Task { await save() } }
         }
-        .onChange(of: scenePhase) { newPhase in
-            if newPhase == .active, isDirty {
-                checkForConflictBeforeSaving()
-            }
-        }
-        .sheet(item: $activeConflict) { conflict in
-            ConflictResolutionView(conflict: conflict) { choice in
-                Task { await resolveConflict(conflict, choice: choice) }
-            }
-        }
     }
 
     // MARK: - Editor
 
     private var editorBody: some View {
         VStack(spacing: 0) {
+            offlineBanner
             if isPreviewMode {
                 MarkdownView(text: text)
             } else {
@@ -91,6 +88,22 @@ struct NoteEditorView: View {
                     .replaceDisabled(false)
             }
             statusBar
+        }
+    }
+
+    @ViewBuilder
+    private var offlineBanner: some View {
+        if isOfflineEditingActive {
+            HStack(spacing: 6) {
+                Image(systemName: "wifi.slash")
+                Text("You're offline. Edits will sync automatically once you're back online.")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.bar)
         }
     }
 
@@ -126,6 +139,10 @@ struct NoteEditorView: View {
             Text("Saved")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+        case .savedOffline:
+            Label("Saved offline · will sync", systemImage: "icloud.and.arrow.up.slash")
+                .font(.caption)
+                .foregroundStyle(.orange)
         case .failed:
             Label("Save Failed", systemImage: "exclamationmark.triangle")
                 .font(.caption)
@@ -178,15 +195,45 @@ struct NoteEditorView: View {
     private func load() async {
         isLoading = true
         loadError = nil
+
+        if isOfflineEditingActive {
+            do {
+                try loadFromCache()
+            } catch OfflineStoreError.notCached {
+                loadError = "Not available offline — download it while connected."
+            } catch {
+                loadError = error.localizedDescription
+            }
+            isLoading = false
+            return
+        }
+
         do {
             let (loadedText, loadedDEK) = try await noteContentService.loadContent(for: item)
             text = loadedText
             dek = loadedDEK
-            loadedModifiedAt = notesDriveService.allItems.first(where: { $0.id == item.id })?.modifiedAt ?? item.modifiedAt
+            usingOfflineCopy = false
         } catch {
-            loadError = error.localizedDescription
+            // The network is nominally up but the fetch failed. If this note is downloaded, the
+            // cached copy is a better answer than an error — fall back to it and keep the session
+            // offline-first, so edits are persisted locally and synced by SyncEngine rather than
+            // repeatedly failing against the same flaky connection.
+            if FeatureFlags.offlineEditing, offlineStore.isAvailableOffline(item.id),
+               (try? loadFromCache()) != nil {
+                loadError = nil
+            } else {
+                loadError = error.localizedDescription
+            }
         }
         isLoading = false
+    }
+
+    /// Reads this note's text and DEK out of the offline cache and marks the session offline-first.
+    private func loadFromCache() throws {
+        let (loadedText, loadedDEK) = try offlineStore.readPlaintext(id: item.id)
+        text = loadedText
+        dek = loadedDEK
+        usingOfflineCopy = true
     }
 
     private func loadErrorView(_ message: String) -> some View {
@@ -220,64 +267,47 @@ struct NoteEditorView: View {
 
     private func save() async {
         guard isDirty, let dek else { return }
+        isDirty = false
+        saveStatus = .saving
 
-        // Before autosaving, check whether the server copy has advanced past what this editing
-        // session last knew about (kept fresh by SyncEngine's delta sync via notesDriveService)
-        // — if so, block the save and surface a conflict instead of silently overwriting.
-        if let current = notesDriveService.allItems.first(where: { $0.id == item.id }),
-           let loadedModifiedAt, current.modifiedAt > loadedModifiedAt {
-            raiseConflict(serverModifiedAt: current.modifiedAt)
+        if isOfflineEditingActive || (usingOfflineCopy && offlineStore.isAvailableOffline(item.id)) {
+            guard offlineStore.isAvailableOffline(item.id) else {
+                saveStatus = .failed("This note isn't downloaded, so offline edits can't be saved.")
+                isDirty = true
+                return
+            }
+            do {
+                try offlineStore.writePendingEdit(text, id: item.id, dek: dek)
+                saveStatus = .savedOffline
+            } catch {
+                saveStatus = .failed(error.localizedDescription)
+                isDirty = true
+            }
             return
         }
 
-        isDirty = false
-        saveStatus = .saving
         do {
             let updatedAt = try await noteContentService.saveContent(text, for: item, dek: dek)
             notesDriveService.noteContentWasSaved(itemID: item.id, size: Int64(text.utf8.count), modifiedAt: updatedAt)
-            loadedModifiedAt = updatedAt
+            if FeatureFlags.offlineEditing && offlineStore.isAvailableOffline(item.id) {
+                refreshOfflineCache(savedAt: updatedAt, dek: dek)
+            }
             saveStatus = .saved
         } catch {
             saveStatus = .failed(error.localizedDescription)
-            // No blind isDirty=true retry here anymore: a retryable failure is now durably
-            // queued by NoteContentService.saveContent itself (SyncEngine drains it with
-            // backoff); looping forever on a non-retryable failure would just be noise. See
-            // the Epic 8 report for the full rationale.
+            isDirty = true
         }
     }
 
-    // MARK: - Conflicts
-
-    /// Re-checks for a conflict when the app returns to the foreground while this editor is
-    /// open and there's an unsaved edit — catches the case where the server changed while the
-    /// app was backgrounded, before the next autosave debounce would otherwise fire.
-    private func checkForConflictBeforeSaving() {
-        guard let current = notesDriveService.allItems.first(where: { $0.id == item.id }),
-              let loadedModifiedAt, current.modifiedAt > loadedModifiedAt else { return }
-        raiseConflict(serverModifiedAt: current.modifiedAt)
-    }
-
-    private func raiseConflict(serverModifiedAt: Date) {
-        syncEngine.reportConflict(
-            itemID: item.id, itemName: item.name, parentID: item.parentID,
-            serverModifiedAt: serverModifiedAt, localModifiedAt: loadedModifiedAt
-        )
-        activeConflict = syncEngine.conflicts.first(where: { $0.itemID == item.id })
-    }
-
-    private func resolveConflict(_ conflict: SyncConflict, choice: ConflictChoice) async {
-        let localSource: ConflictLocalSource = dek.map { .editorText(text, dek: $0) } ?? .queuedCiphertext
+    /// After a successful online save, brings the offline cache up to the version just uploaded.
+    /// Re-encrypts locally rather than re-downloading — the bytes are already in hand. Best-effort
+    /// and non-fatal: the online save has already succeeded regardless of the outcome, and a stale
+    /// cache entry is corrected by the next download or sync.
+    private func refreshOfflineCache(savedAt: Date, dek: Bytes) {
         do {
-            let outcome = try await syncEngine.resolve(conflict, choice: choice, localSource: localSource)
-            if let updatedText = outcome.updatedLocalText {
-                text = updatedText
-                isDirty = false
-            }
-            loadedModifiedAt = notesDriveService.allItems.first(where: { $0.id == item.id })?.modifiedAt ?? loadedModifiedAt
-            activeConflict = nil
+            try offlineStore.cacheLocalVersion(text, id: item.id, dek: dek, serverModifiedAt: savedAt)
         } catch {
-            saveStatus = .failed(error.localizedDescription)
-            activeConflict = nil
+            // Intentionally ignored — see doc comment above.
         }
     }
 }
@@ -298,6 +328,7 @@ struct NoteEditorView: View {
         ))
         .environmentObject(NotesDriveService())
         .environmentObject(NoteContentService())
-        .environmentObject(SyncEngine())
+        .environmentObject(OfflineStore())
+        .environmentObject(NetworkMonitor())
     }
 }
