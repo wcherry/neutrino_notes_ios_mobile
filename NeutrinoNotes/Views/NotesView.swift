@@ -10,8 +10,14 @@ struct NotesView: View {
 
     @EnvironmentObject var notesDriveService: NotesDriveService
     @EnvironmentObject var noteContentService: NoteContentService
+    @EnvironmentObject var tagsService: TagsService
     @State private var selectedSection: NotesSection = .myNotes
     @State private var path = NavigationPath()
+
+    /// Tags are an Epic 12 feature, so the picker offers them only when it is enabled.
+    private var sections: [NotesSection] {
+        FeatureFlags.organization ? NotesSection.allCases : [.myNotes, .trash]
+    }
 
     // MARK: - Body
 
@@ -29,7 +35,7 @@ struct NotesView: View {
 
     private var featureFlagEnabledBody: some View {
         NavigationStack(path: $path) {
-            browserView(parentID: nil)
+            sectionRoot
                 .navigationDestination(for: NoteItem.self) { destination in
                     if destination.type == .folder {
                         browserView(parentID: destination.id)
@@ -37,10 +43,13 @@ struct NotesView: View {
                         NoteEditorView(item: destination)
                     }
                 }
+                .navigationDestination(for: NoteTag.self) { tag in
+                    TaggedNotesView(tag: tag)
+                }
                 .toolbar {
                     ToolbarItem(placement: .principal) {
                         Picker("Section", selection: $selectedSection) {
-                            ForEach(NotesSection.allCases) { section in
+                            ForEach(sections) { section in
                                 Text(section.rawValue).tag(section)
                             }
                         }
@@ -48,6 +57,23 @@ struct NotesView: View {
                         .frame(maxWidth: 320)
                     }
                 }
+                // A folder (or tag) pushed under one section has no meaning under the next, so
+                // switching sections returns to that section's root rather than leaving a stale
+                // screen on top of the stack.
+                .onChange(of: selectedSection) { _ in
+                    path = NavigationPath()
+                }
+        }
+    }
+
+    /// The root screen for the selected section. Tags browse tags rather than items, so that
+    /// section has its own view instead of the item browser.
+    @ViewBuilder
+    private var sectionRoot: some View {
+        if selectedSection == .tags {
+            TagsView()
+        } else {
+            browserView(parentID: nil)
         }
     }
 

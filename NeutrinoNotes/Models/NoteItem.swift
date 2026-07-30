@@ -33,6 +33,9 @@ struct NoteItem: Identifiable, Hashable {
     var modifiedAt: Date
     var isTrashed: Bool
     var mimeType: String?       // "application/x-neutrino-note" for files; nil for folders
+    /// Epic 12: Drive's `isStarred` flag — the Favorites model, shared with the web app and
+    /// carried by both files and folders. Defaulted so existing call sites are unaffected.
+    var isStarred: Bool = false
 
     // MARK: - Computed
 

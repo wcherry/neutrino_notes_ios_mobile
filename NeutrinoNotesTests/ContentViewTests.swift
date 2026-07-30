@@ -23,6 +23,8 @@ final class ContentViewTests: XCTestCase {
             .environmentObject(offlineStore)
             .environmentObject(SyncEngine(store: offlineStore, monitor: monitor, content: content))
             .environmentObject(VersionHistoryService())
+            .environmentObject(TagsService())
+            .environmentObject(PinStore(defaults: UserDefaults(suiteName: "ContentViewTests.\(UUID().uuidString)")!))
 
         // `.environmentObject(...)` wraps ContentView in ModifiedContent, and SwiftUI fatal-errors
         // if `.body` is accessed directly on a ModifiedContent value (it isn't a plain composed

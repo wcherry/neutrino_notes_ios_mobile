@@ -292,6 +292,31 @@ final class OfflineStore: ObservableObject {
         logger.debug("clearPendingEdit: id=\(id, privacy: .public)")
     }
 
+    /// Moves the note's base timestamp forward after a *metadata-only* server write — a rename or
+    /// a star, both of which set `updated_at = now` without touching the note's content.
+    ///
+    /// Without this, SyncEngine sees the server ahead of the version a pending edit was written
+    /// against and flags a conflict, asking the user to choose between two copies of their own
+    /// text. The rebase is skipped when the cache already knows about a version at or beyond the
+    /// one the metadata write was made against, so a genuine remote content edit still conflicts.
+    ///
+    /// Best-effort: the metadata write has already succeeded, and the worst outcome of a failure
+    /// here is the spurious conflict this exists to avoid, which the user can still resolve.
+    func rebasePendingEdit(id: String, previousModifiedAt: Date, serverModifiedAt: Date) {
+        guard var note = note(id: id) else { return }
+        guard serverModifiedAt > note.serverModifiedAt else { return }
+        guard note.serverModifiedAt <= previousModifiedAt else {
+            logger.debug("rebasePendingEdit skipped: id=\(id, privacy: .public) — cache already newer than the write's base")
+            return
+        }
+        note.serverModifiedAt = serverModifiedAt
+        if note.pendingEdit != nil {
+            note.pendingEdit?.baseServerModifiedAt = serverModifiedAt
+        }
+        try? upsert(note)
+        logger.debug("rebasePendingEdit: id=\(id, privacy: .public) -> \(serverModifiedAt.description, privacy: .public)")
+    }
+
     /// Records a failed upload attempt, which pushes the note further down the backoff curve.
     func recordFailure(id: String, error: String) throws {
         guard var note = note(id: id), note.pendingEdit != nil else {

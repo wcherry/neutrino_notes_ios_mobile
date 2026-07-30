@@ -19,4 +19,9 @@ enum FeatureFlags {
     /// browsing previous versions, restoring one, and comparing two).
     /// When false, the editor's version actions are hidden.
     static let versionHistory: Bool = true
+
+    /// Set to true to enable the Epic 12 Organization feature (favorites, device-local pinning,
+    /// recent notes, and tags). When false, the Recents and Favorites tabs show their placeholders,
+    /// the Tags section is hidden, and no star/pin/tag actions appear.
+    static let organization: Bool = true
 }

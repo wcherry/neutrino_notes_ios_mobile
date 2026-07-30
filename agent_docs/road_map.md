@@ -315,16 +315,23 @@ Fast, offline-capable search.
 
 ⸻
 
-⬜ Epic 12 — Organization
+✅ Epic 12 — Organization
 
 Features
 
-* ⬜ Favorites
-* ⬜ Pinning
-* ⬜ Recent Notes
-* ⬜ Trash
-* ⬜ Tags
-* ⬜ Nested folders
+* ✅ Favorites — Drive's `isStarred` on files and folders, so a star set here shows up in the
+  web app and vice versa
+* ✅ Pinning — **device-local only.** Drive has no `is_pinned` column and no endpoint that could
+  carry one, and the web app has no pin concept, so there is nothing to sync with; pins live in
+  `UserDefaults` and float items to the top of the current list. Favorites is the cross-device
+  mechanism
+* ✅ Recent Notes — the server's own `view=recent` listing, so an edit made in the web app shows
+  up here
+* ✅ Trash — delivered in Epic 4 (trash, restore, delete forever, empty trash)
+* ✅ Tags — full CRUD plus per-note assignment against Drive's tag APIs. Note that a tag's *name*
+  is stored on the server in the clear, exactly like a file's name; note bodies stay encrypted.
+  The web app has no tag UI yet, so this is additive rather than a compatibility requirement
+* ✅ Nested folders — delivered in Epic 4 (create, navigate, move)
 
 Milestone
 

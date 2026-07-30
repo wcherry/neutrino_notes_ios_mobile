@@ -19,6 +19,7 @@ struct NoteBrowserView: View {
     @EnvironmentObject var notesDriveService: NotesDriveService
     @EnvironmentObject var noteContentService: NoteContentService
     @EnvironmentObject var offlineStore: OfflineStore
+    @EnvironmentObject var pinStore: PinStore
 
     // MARK: - State
 
@@ -32,11 +33,17 @@ struct NoteBrowserView: View {
     /// progress indicator instead of the static "available offline" badge.
     @State private var downloadingItemID: String?
     @State private var offlineActionError: String?
+    /// Epic 12: the note whose tags are being edited.
+    @State private var itemToTag: NoteItem?
 
     // MARK: - Computed
 
+    /// Pinned items float to the top of My Notes. Trash keeps the server's ordering — a pin is
+    /// about finding things you are working on, and nothing in the Trash qualifies.
     private var currentItems: [NoteItem] {
-        notesDriveService.items(in: section, parentID: parentID)
+        let items = notesDriveService.items(in: section, parentID: parentID)
+        guard FeatureFlags.organization, section == .myNotes else { return items }
+        return pinStore.sorted(items)
     }
 
     private var navigationTitle: String {
@@ -122,6 +129,9 @@ struct NoteBrowserView: View {
         } message: {
             Text(offlineActionError ?? "")
         }
+        .sheet(item: $itemToTag) { item in
+            TagPickerSheet(item: item)
+        }
     }
 
     // MARK: - Note List
@@ -143,10 +153,12 @@ struct NoteBrowserView: View {
         Group {
             if item.type == .folder || FeatureFlags.markdownEditor {
                 NavigationLink(value: item) {
-                    NoteRowView(item: item, offlineBadge: offlineBadge(for: item))
+                    NoteRowView(item: item, offlineBadge: offlineBadge(for: item),
+                            isPinned: FeatureFlags.organization && pinStore.isPinned(item.id))
                 }
             } else {
-                NoteRowView(item: item, offlineBadge: offlineBadge(for: item))
+                NoteRowView(item: item, offlineBadge: offlineBadge(for: item),
+                            isPinned: FeatureFlags.organization && pinStore.isPinned(item.id))
             }
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
@@ -171,6 +183,8 @@ struct NoteBrowserView: View {
             } label: {
                 Label("Delete", systemImage: "trash")
             }
+        case .tags:
+            EmptyView()
         case .trash:
             Button(role: .destructive) {
                 notesDriveService.delete(itemID: item.id)
@@ -190,7 +204,10 @@ struct NoteBrowserView: View {
                 Label("Rename", systemImage: "pencil")
             }
             .tint(.orange)
+            starSwipeAction(for: item)
             offlineSwipeAction(for: item)
+        case .tags:
+            EmptyView()
         case .trash:
             Button {
                 notesDriveService.restore(itemID: item.id)
@@ -198,6 +215,19 @@ struct NoteBrowserView: View {
                 Label("Restore", systemImage: "arrow.uturn.backward")
             }
             .tint(.green)
+        }
+    }
+
+    @ViewBuilder
+    private func starSwipeAction(for item: NoteItem) -> some View {
+        if FeatureFlags.organization {
+            Button {
+                notesDriveService.setStarred(itemID: item.id, isStarred: !item.isStarred)
+            } label: {
+                Label(item.isStarred ? "Unstar" : "Favorite",
+                      systemImage: item.isStarred ? "star.slash" : "star")
+            }
+            .tint(.yellow)
         }
     }
 
@@ -238,6 +268,7 @@ struct NoteBrowserView: View {
             } label: {
                 Label("Move", systemImage: "folder")
             }
+            organizationContextMenuItems(for: item)
             offlineContextMenuItems(for: item)
             Divider()
             Button(role: .destructive) {
@@ -245,6 +276,8 @@ struct NoteBrowserView: View {
             } label: {
                 Label("Delete", systemImage: "trash")
             }
+        case .tags:
+            EmptyView()
         case .trash:
             Button {
                 notesDriveService.restore(itemID: item.id)
@@ -255,6 +288,33 @@ struct NoteBrowserView: View {
                 notesDriveService.delete(itemID: item.id)
             } label: {
                 Label("Delete Forever", systemImage: "trash.slash")
+            }
+        }
+    }
+
+    /// Epic 12: favorite (server-side, shared with the web app), pin (this device only), and tags
+    /// (files only — folders can't be tagged).
+    @ViewBuilder
+    private func organizationContextMenuItems(for item: NoteItem) -> some View {
+        if FeatureFlags.organization {
+            Button {
+                notesDriveService.setStarred(itemID: item.id, isStarred: !item.isStarred)
+            } label: {
+                Label(item.isStarred ? "Remove from Favorites" : "Add to Favorites",
+                      systemImage: item.isStarred ? "star.slash" : "star")
+            }
+            Button {
+                pinStore.togglePin(item.id)
+            } label: {
+                Label(pinStore.isPinned(item.id) ? "Unpin" : "Pin to Top",
+                      systemImage: pinStore.isPinned(item.id) ? "pin.slash" : "pin")
+            }
+            if item.type == .file {
+                Button {
+                    itemToTag = item
+                } label: {
+                    Label("Tags\u{2026}", systemImage: "tag")
+                }
             }
         }
     }
@@ -375,6 +435,7 @@ struct NoteBrowserView: View {
     private var emptyStateIcon: String {
         switch section {
         case .myNotes: return "note.text"
+        case .tags:    return "tag"
         case .trash:   return "trash"
         }
     }
@@ -382,6 +443,7 @@ struct NoteBrowserView: View {
     private var emptyStateTitle: String {
         switch section {
         case .myNotes: return "No Notes Here"
+        case .tags:    return "No Tags Yet"
         case .trash:   return "Trash is Empty"
         }
     }
@@ -389,6 +451,8 @@ struct NoteBrowserView: View {
     private var emptyStateSubtitle: String {
         switch section {
         case .myNotes: return "Tap the note button to create your first Markdown note."
+        // TagsView owns this section; the browser only ever sees it via an exhaustive switch.
+        case .tags:    return "Tags group notes across folders."
         case .trash:   return "Deleted notes are moved here before being permanently removed."
         }
     }
@@ -415,5 +479,7 @@ struct NoteBrowserView: View {
             .environmentObject(NoteContentService())
             .environmentObject(OfflineStore())
             .environmentObject(VersionHistoryService())
+            .environmentObject(TagsService())
+            .environmentObject(PinStore())
     }
 }

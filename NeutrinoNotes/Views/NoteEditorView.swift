@@ -18,6 +18,7 @@ struct NoteEditorView: View {
     @EnvironmentObject var offlineStore: OfflineStore
     @EnvironmentObject var networkMonitor: NetworkMonitor
     @EnvironmentObject var versionHistoryService: VersionHistoryService
+    @EnvironmentObject var pinStore: PinStore
     @Environment(\.undoManager) private var undoManager
 
     // MARK: - State
@@ -39,6 +40,7 @@ struct NoteEditorView: View {
     @State private var usingOfflineCopy = false
     @State private var showVersionHistory = false
     @State private var showSaveVersionSheet = false
+    @State private var showTagPicker = false
 
     private enum SaveStatus: Equatable {
         case idle
@@ -57,6 +59,18 @@ struct NoteEditorView: View {
     /// saving one is a write. Both actions need the note's DEK, which only a loaded session has.
     private var isVersioningAvailable: Bool {
         FeatureFlags.versionHistory && dek != nil && networkMonitor.isOnline && !usingOfflineCopy
+    }
+
+    /// The live star flag: the service's copy is the one the star action updates, and it may be
+    /// newer than the `item` this view was pushed with.
+    private var isStarred: Bool {
+        notesDriveService.item(id: item.id)?.isStarred ?? item.isStarred
+    }
+
+    /// Favorites and tags are server writes, so they need a connection. Pinning is local and
+    /// always available.
+    private var areServerOrganizationActionsAvailable: Bool {
+        FeatureFlags.organization && networkMonitor.isOnline
     }
 
     // MARK: - Body
@@ -91,6 +105,9 @@ struct NoteEditorView: View {
             SaveVersionSheet { label in
                 Task { await saveVersion(label: label) }
             }
+        }
+        .sheet(isPresented: $showTagPicker) {
+            TagPickerSheet(item: item)
         }
     }
 
@@ -208,6 +225,30 @@ struct NoteEditorView: View {
                 Label("Redo", systemImage: "arrow.uturn.forward")
             }
             .disabled(undoManager?.canRedo != true)
+
+            if FeatureFlags.organization {
+                Button {
+                    notesDriveService.setStarred(itemID: item.id, isStarred: !isStarred)
+                } label: {
+                    Label(isStarred ? "Remove from Favorites" : "Add to Favorites",
+                          systemImage: isStarred ? "star.slash" : "star")
+                }
+                .disabled(!areServerOrganizationActionsAvailable)
+
+                Button {
+                    pinStore.togglePin(item.id)
+                } label: {
+                    Label(pinStore.isPinned(item.id) ? "Unpin" : "Pin to Top",
+                          systemImage: pinStore.isPinned(item.id) ? "pin.slash" : "pin")
+                }
+
+                Button {
+                    showTagPicker = true
+                } label: {
+                    Label("Tags\u{2026}", systemImage: "tag")
+                }
+                .disabled(!areServerOrganizationActionsAvailable)
+            }
 
             if FeatureFlags.versionHistory {
                 Button {
@@ -406,5 +447,7 @@ struct NoteEditorView: View {
         .environmentObject(OfflineStore())
         .environmentObject(NetworkMonitor())
         .environmentObject(VersionHistoryService())
+        .environmentObject(TagsService())
+        .environmentObject(PinStore())
     }
 }
