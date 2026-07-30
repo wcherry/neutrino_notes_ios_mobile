@@ -34,6 +34,21 @@ xcodegen generate
 open NeutrinoNotes.xcodeproj
 ```
 
+## Deploying to TestFlight
+
+```sh
+cp scripts/.env.example scripts/.env   # then fill in App Store Connect credentials
+scripts/deploy_testflight.sh           # bump the build number by 1 and ship
+scripts/deploy_testflight.sh 7         # ship build 7
+scripts/deploy_testflight.sh 7 1.1.0   # build 7, marketing version 1.1.0
+```
+
+The script bumps `CURRENT_PROJECT_VERSION` in `project.yml` (the source of truth — `Info.plist` reads it through `$(CURRENT_PROJECT_VERSION)`), regenerates the project with XcodeGen, runs the unit tests, archives, exports an App Store `.ipa`, and uploads it with `xcrun altool`. `--skip-tests` and `--no-upload` are available for iterating. Commit the `project.yml` bump afterwards so the next build number starts from the right place.
+
+Credentials come from `scripts/.env` (gitignored) — either an App Store Connect API key (`ASC_KEY_ID` / `ASC_ISSUER_ID` / `ASC_KEY_PATH`) or an Apple ID with an app-specific password (`ASC_APPLE_ID` / `ASC_APP_PASSWORD`). See `scripts/.env.example`.
+
+Signing is automatic and needs an *Apple Distribution* certificate for team `46KWJJ63FU`. Xcode 26 stores automatic-signing certificates in the data-protection keychain, where `security find-identity` cannot see them, so the script verifies the exported `.ipa`'s embedded provisioning profile and bundle version instead of preflighting the keychain — a development-signed or stale-versioned build fails locally rather than being rejected by Apple ten minutes later.
+
 ## Architecture
 
 The app is structured as a five-tab SwiftUI shell with tabs for Notes, Recents, Favorites, Offline, and Settings. Each tab keeps its own `NavigationStack` and navigation state; the Notes tab owns an explicit `NavigationPath` (in `NotesView`) so it can push straight into the editor after creating a note.

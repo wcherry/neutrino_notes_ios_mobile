@@ -29,3 +29,6 @@ Podfile.lock
 # Swift Package Manager
 .build/
 .swiftpm/
+
+# TestFlight deploy credentials
+scripts/.env
