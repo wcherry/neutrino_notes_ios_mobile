@@ -179,14 +179,23 @@ final class NoteContentService: ObservableObject {
             throw NoteContentError.serverError(statusCode: 0)
         }
 
-        // The autosave endpoint takes the encrypted bytes directly as the request body —
-        // no multipart wrapping and no encrypted_metadata (that's only sent on create).
+        // The autosave endpoint expects the same multipart/form-data "file" part as create —
+        // sending the raw bytes as application/octet-stream trips actix-multipart's
+        // ContentTypeIncompatible check. No encrypted_metadata or folder_id here; those only
+        // apply on create.
+        let boundary = UUID().uuidString
+        let body = buildUploadBody(
+            encryptedData: encryptedContent, fileName: item.name,
+            mimeType: item.mimeType ?? NoteItem.markdownMIME,
+            parentFolderID: nil, encryptedMetadata: nil, boundary: boundary
+        )
+
         var request = URLRequest(url: url)
         request.httpMethod = "PUT"
-        request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
-        let (data, response) = try await upload(request, body: encryptedContent)
+        let (data, response) = try await upload(request, body: body)
         try Self.checkStatus(response)
         do {
             let updated = try Self.decoder.decode(APIFileResponse.self, from: data)
@@ -428,7 +437,7 @@ final class NoteContentService: ObservableObject {
         fileName: String,
         mimeType: String,
         parentFolderID: String?,
-        encryptedMetadata: String,
+        encryptedMetadata: String?,
         boundary: String
     ) -> Data {
         var body = Data()
@@ -439,11 +448,13 @@ final class NoteContentService: ObservableObject {
             body.append(Data(string.utf8))
         }
 
-        append("\(dash)\(boundary)\(crlf)")
-        append("Content-Disposition: form-data; name=\"encrypted_metadata\"\(crlf)")
-        append(crlf)
-        append(encryptedMetadata)
-        append(crlf)
+        if let encryptedMetadata {
+            append("\(dash)\(boundary)\(crlf)")
+            append("Content-Disposition: form-data; name=\"encrypted_metadata\"\(crlf)")
+            append(crlf)
+            append(encryptedMetadata)
+            append(crlf)
+        }
 
         if let folderID = parentFolderID {
             append("\(dash)\(boundary)\(crlf)")
