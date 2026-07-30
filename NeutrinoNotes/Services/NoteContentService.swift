@@ -42,6 +42,11 @@ final class NoteContentService: ObservableObject {
     /// Set once at app launch by NeutrinoNotesApp so the service can refresh tokens before requests.
     weak var authService: AuthService?
 
+    /// Set once at app launch by NeutrinoNotesApp. A retryable `saveContent` failure is enqueued
+    /// here (with the already-encrypted ciphertext) instead of just surfacing the error, so a
+    /// transient network blip during autosave doesn't lose the edit.
+    weak var syncEngine: SyncEngine?
+
     // MARK: - Private
 
     private static let sodium = Sodium()
@@ -167,6 +172,11 @@ final class NoteContentService: ObservableObject {
 
     /// Encrypts `text` with the note's existing DEK and PUTs it to the autosave endpoint.
     /// Returns the server's updated `updatedAt` so the caller can reflect it in NotesDriveService.
+    ///
+    /// On a retryable failure (transient network error, 5xx), the already-encrypted ciphertext
+    /// is enqueued as a `saveNoteContent` `SyncQueueEntry` before rethrowing, so `SyncEngine`
+    /// durably retries the upload with backoff instead of the edit only living in
+    /// `NoteEditorView`'s in-memory debounce (which is lost if the app is killed).
     func saveContent(_ text: String, for item: NoteItem, dek: Bytes) async throws -> Date {
         logger.error("saveContent: id=\(item.id, privacy: .public)")
         let token = try await authorizedToken()
@@ -175,7 +185,53 @@ final class NoteContentService: ObservableObject {
         let encryptedContent = try encrypt(text: text, dek: dek, xcss: xcss)
         logger.error("saveContent: dek(b64)=\(Self.b64(dek), privacy: .public) plaintext=\(text.utf8.count) bytes encryptedContent=\(encryptedContent.count) bytes sha256=\(Self.fingerprint(encryptedContent), privacy: .public)")
 
-        guard let url = URL(string: baseURL + "/api/v1/drive/files/\(item.id)/autosave") else {
+        do {
+            let updatedAt = try await putEncryptedContent(
+                encryptedContent, itemID: item.id, fileName: item.name,
+                mimeType: item.mimeType ?? NoteItem.markdownMIME, token: token
+            )
+            logger.error("saveContent succeeded: id=\(item.id, privacy: .public)")
+            return updatedAt
+        } catch {
+            if SyncErrorClassifier.isRetryable(error) {
+                let entry = SyncQueueEntry.saveNoteContent(
+                    itemID: item.id,
+                    encryptedContentBase64: encryptedContent.base64EncodedString(),
+                    fileName: item.name,
+                    mimeType: item.mimeType ?? NoteItem.markdownMIME,
+                    baseModifiedAt: item.modifiedAt
+                )
+                syncEngine?.enqueue(entry)
+                logger.debug("saveContent: retryable failure, enqueued for retry: id=\(item.id, privacy: .public)")
+            }
+            throw error
+        }
+    }
+
+    /// Executes a persisted `saveNoteContent` queue entry — called by `SyncEngine`'s executor
+    /// when draining the retry queue. The ciphertext was already encrypted at enqueue time (see
+    /// `saveContent`'s catch block above), so this just re-PUTs the existing bytes rather than
+    /// re-encrypting (the plaintext/DEK are never persisted to disk).
+    func performQueuedSave(_ entry: SyncQueueEntry) async throws -> SyncOperationOutcome {
+        guard entry.kind == .saveNoteContent,
+              let itemID = entry.itemID,
+              let base64 = entry.encryptedContentBase64,
+              let data = Data(base64Encoded: base64),
+              let fileName = entry.fileName,
+              let mimeType = entry.mimeType
+        else {
+            throw NoteContentError.decodingError(underlying: SyncEngineError.malformedEntry)
+        }
+        let token = try await authorizedToken()
+        let updatedAt = try await putEncryptedContent(data, itemID: itemID, fileName: fileName, mimeType: mimeType, token: token)
+        return SyncOperationOutcome(createdItem: nil, updatedModifiedAt: updatedAt)
+    }
+
+    /// Shared PUT implementation for the autosave endpoint — used both by the live
+    /// `saveContent` (fresh encryption) and `performQueuedSave` (already-encrypted ciphertext
+    /// from a retried/persisted `SyncQueueEntry`).
+    private func putEncryptedContent(_ encryptedContent: Data, itemID: String, fileName: String, mimeType: String, token: String) async throws -> Date {
+        guard let url = URL(string: baseURL + "/api/v1/drive/files/\(itemID)/autosave") else {
             throw NoteContentError.serverError(statusCode: 0)
         }
 
@@ -185,8 +241,7 @@ final class NoteContentService: ObservableObject {
         // apply on create.
         let boundary = UUID().uuidString
         let body = buildUploadBody(
-            encryptedData: encryptedContent, fileName: item.name,
-            mimeType: item.mimeType ?? NoteItem.markdownMIME,
+            encryptedData: encryptedContent, fileName: fileName, mimeType: mimeType,
             parentFolderID: nil, encryptedMetadata: nil, boundary: boundary
         )
 
@@ -199,7 +254,6 @@ final class NoteContentService: ObservableObject {
         try Self.checkStatus(response)
         do {
             let updated = try Self.decoder.decode(APIFileResponse.self, from: data)
-            logger.error("saveContent succeeded: id=\(item.id, privacy: .public)")
             return updated.updatedAt
         } catch {
             throw NoteContentError.decodingError(underlying: error)

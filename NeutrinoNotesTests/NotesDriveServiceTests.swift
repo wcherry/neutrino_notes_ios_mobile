@@ -299,4 +299,28 @@ final class NotesDriveServiceTests: XCTestCase {
         let file = makeFile(id: "f1", name: "Report.pdf", mimeType: "application/pdf")
         XCTAssertFalse(NoteItem.isVisibleInNotes(file))
     }
+
+    // MARK: - NoteItem Codable round trip
+
+    // Epic 8 (Sync Engine) needs NoteItem to be Codable so SyncQueueEntry can persist
+    // itemSnapshot/trashSnapshot to disk. These round-trip through JSONEncoder/JSONDecoder
+    // exactly as SyncPersistence will.
+
+    func test_noteItem_folder_codableRoundTrip_preservesAllFields() throws {
+        let folder = makeFolder(id: "folder-1", name: "My Folder", parentID: "parent-1")
+
+        let data = try JSONEncoder().encode(folder)
+        let decoded = try JSONDecoder().decode(NoteItem.self, from: data)
+
+        XCTAssertEqual(decoded, folder)
+    }
+
+    func test_noteItem_file_codableRoundTrip_preservesAllFields() throws {
+        let file = makeFile(id: "file-1", name: "Notes.md", parentID: "parent-1")
+
+        let data = try JSONEncoder().encode(file)
+        let decoded = try JSONDecoder().decode(NoteItem.self, from: data)
+
+        XCTAssertEqual(decoded, file)
+    }
 }

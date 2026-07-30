@@ -15,7 +15,9 @@ struct NoteEditorView: View {
 
     @EnvironmentObject var notesDriveService: NotesDriveService
     @EnvironmentObject var noteContentService: NoteContentService
+    @EnvironmentObject var syncEngine: SyncEngine
     @Environment(\.undoManager) private var undoManager
+    @Environment(\.scenePhase) private var scenePhase
 
     // MARK: - State
 
@@ -27,6 +29,10 @@ struct NoteEditorView: View {
     @State private var saveStatus: SaveStatus = .idle
     @State private var pendingSaveTask: Task<Void, Never>?
     @State private var showFindNavigator = false
+    /// The item's `modifiedAt` as of when this editing session started (or last saved) — used
+    /// to detect whether the server copy has advanced past what this device knows about.
+    @State private var loadedModifiedAt: Date?
+    @State private var activeConflict: SyncConflict?
 
     private enum SaveStatus: Equatable {
         case idle
@@ -55,6 +61,16 @@ struct NoteEditorView: View {
         .onDisappear {
             pendingSaveTask?.cancel()
             if isDirty { Task { await save() } }
+        }
+        .onChange(of: scenePhase) { newPhase in
+            if newPhase == .active, isDirty {
+                checkForConflictBeforeSaving()
+            }
+        }
+        .sheet(item: $activeConflict) { conflict in
+            ConflictResolutionView(conflict: conflict) { choice in
+                Task { await resolveConflict(conflict, choice: choice) }
+            }
         }
     }
 
@@ -147,6 +163,7 @@ struct NoteEditorView: View {
             let (loadedText, loadedDEK) = try await noteContentService.loadContent(for: item)
             text = loadedText
             dek = loadedDEK
+            loadedModifiedAt = notesDriveService.allItems.first(where: { $0.id == item.id })?.modifiedAt ?? item.modifiedAt
         } catch {
             loadError = error.localizedDescription
         }
@@ -184,15 +201,64 @@ struct NoteEditorView: View {
 
     private func save() async {
         guard isDirty, let dek else { return }
+
+        // Before autosaving, check whether the server copy has advanced past what this editing
+        // session last knew about (kept fresh by SyncEngine's delta sync via notesDriveService)
+        // — if so, block the save and surface a conflict instead of silently overwriting.
+        if let current = notesDriveService.allItems.first(where: { $0.id == item.id }),
+           let loadedModifiedAt, current.modifiedAt > loadedModifiedAt {
+            raiseConflict(serverModifiedAt: current.modifiedAt)
+            return
+        }
+
         isDirty = false
         saveStatus = .saving
         do {
             let updatedAt = try await noteContentService.saveContent(text, for: item, dek: dek)
             notesDriveService.noteContentWasSaved(itemID: item.id, size: Int64(text.utf8.count), modifiedAt: updatedAt)
+            loadedModifiedAt = updatedAt
             saveStatus = .saved
         } catch {
             saveStatus = .failed(error.localizedDescription)
-            isDirty = true
+            // No blind isDirty=true retry here anymore: a retryable failure is now durably
+            // queued by NoteContentService.saveContent itself (SyncEngine drains it with
+            // backoff); looping forever on a non-retryable failure would just be noise. See
+            // the Epic 8 report for the full rationale.
+        }
+    }
+
+    // MARK: - Conflicts
+
+    /// Re-checks for a conflict when the app returns to the foreground while this editor is
+    /// open and there's an unsaved edit — catches the case where the server changed while the
+    /// app was backgrounded, before the next autosave debounce would otherwise fire.
+    private func checkForConflictBeforeSaving() {
+        guard let current = notesDriveService.allItems.first(where: { $0.id == item.id }),
+              let loadedModifiedAt, current.modifiedAt > loadedModifiedAt else { return }
+        raiseConflict(serverModifiedAt: current.modifiedAt)
+    }
+
+    private func raiseConflict(serverModifiedAt: Date) {
+        syncEngine.reportConflict(
+            itemID: item.id, itemName: item.name, parentID: item.parentID,
+            serverModifiedAt: serverModifiedAt, localModifiedAt: loadedModifiedAt
+        )
+        activeConflict = syncEngine.conflicts.first(where: { $0.itemID == item.id })
+    }
+
+    private func resolveConflict(_ conflict: SyncConflict, choice: ConflictChoice) async {
+        let localSource: ConflictLocalSource = dek.map { .editorText(text, dek: $0) } ?? .queuedCiphertext
+        do {
+            let outcome = try await syncEngine.resolve(conflict, choice: choice, localSource: localSource)
+            if let updatedText = outcome.updatedLocalText {
+                text = updatedText
+                isDirty = false
+            }
+            loadedModifiedAt = notesDriveService.allItems.first(where: { $0.id == item.id })?.modifiedAt ?? loadedModifiedAt
+            activeConflict = nil
+        } catch {
+            saveStatus = .failed(error.localizedDescription)
+            activeConflict = nil
         }
     }
 }
@@ -213,5 +279,6 @@ struct NoteEditorView: View {
         ))
         .environmentObject(NotesDriveService())
         .environmentObject(NoteContentService())
+        .environmentObject(SyncEngine())
     }
 }
