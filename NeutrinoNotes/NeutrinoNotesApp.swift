@@ -4,7 +4,24 @@ import SwiftUI
 struct NeutrinoNotesApp: App {
     @StateObject private var authService = AuthService()
     @StateObject private var notesDriveService = NotesDriveService()
-    @StateObject private var noteContentService = NoteContentService()
+    @StateObject private var noteContentService: NoteContentService
+    @StateObject private var networkMonitor: NetworkMonitor
+    @StateObject private var offlineStore: OfflineStore
+    @StateObject private var syncEngine: SyncEngine
+
+    @Environment(\.scenePhase) private var scenePhase
+
+    init() {
+        let noteContentService = NoteContentService()
+        let networkMonitor = NetworkMonitor()
+        let offlineStore = OfflineStore()
+        _noteContentService = StateObject(wrappedValue: noteContentService)
+        _networkMonitor = StateObject(wrappedValue: networkMonitor)
+        _offlineStore = StateObject(wrappedValue: offlineStore)
+        _syncEngine = StateObject(wrappedValue: SyncEngine(
+            store: offlineStore, monitor: networkMonitor, content: noteContentService
+        ))
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -12,10 +29,20 @@ struct NeutrinoNotesApp: App {
                 .environmentObject(authService)
                 .environmentObject(notesDriveService)
                 .environmentObject(noteContentService)
+                .environmentObject(networkMonitor)
+                .environmentObject(offlineStore)
+                .environmentObject(syncEngine)
                 .task {
                     notesDriveService.authService = authService
                     noteContentService.authService = authService
+                    offlineStore.noteContentService = noteContentService
+                    syncEngine.start()
                 }
+        }
+        .onChange(of: scenePhase) { newPhase in
+            if newPhase == .active {
+                syncEngine.requestSync()
+            }
         }
     }
 }

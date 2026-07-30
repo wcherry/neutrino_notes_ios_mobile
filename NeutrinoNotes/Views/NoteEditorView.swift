@@ -15,6 +15,8 @@ struct NoteEditorView: View {
 
     @EnvironmentObject var notesDriveService: NotesDriveService
     @EnvironmentObject var noteContentService: NoteContentService
+    @EnvironmentObject var offlineStore: OfflineStore
+    @EnvironmentObject var networkMonitor: NetworkMonitor
     @Environment(\.undoManager) private var undoManager
 
     // MARK: - State
@@ -27,12 +29,22 @@ struct NoteEditorView: View {
     @State private var saveStatus: SaveStatus = .idle
     @State private var pendingSaveTask: Task<Void, Never>?
     @State private var showFindNavigator = false
+    /// True when this session's text came from the offline cache rather than the server — either
+    /// because the device is offline, or because the network load failed and a cached copy existed.
+    /// Saves then go to the cache and are picked up by SyncEngine, so the edit is durable either way.
+    @State private var usingOfflineCopy = false
 
     private enum SaveStatus: Equatable {
         case idle
         case saving
         case saved
+        case savedOffline
         case failed(String)
+    }
+
+    /// True when the offline-editing UI should engage for this session.
+    private var isOfflineEditingActive: Bool {
+        FeatureFlags.offlineEditing && !networkMonitor.isOnline
     }
 
     // MARK: - Body
@@ -62,12 +74,29 @@ struct NoteEditorView: View {
 
     private var editorBody: some View {
         VStack(spacing: 0) {
+            offlineBanner
             TextEditor(text: $text)
                 .font(.system(.body, design: .monospaced))
                 .onChange(of: text) { _ in scheduleAutosave() }
                 .findNavigator(isPresented: $showFindNavigator)
                 .replaceDisabled(false)
             statusBar
+        }
+    }
+
+    @ViewBuilder
+    private var offlineBanner: some View {
+        if isOfflineEditingActive {
+            HStack(spacing: 6) {
+                Image(systemName: "wifi.slash")
+                Text("You're offline. Edits will sync automatically once you're back online.")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.bar)
         }
     }
 
@@ -103,6 +132,10 @@ struct NoteEditorView: View {
             Text("Saved")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+        case .savedOffline:
+            Label("Saved offline · will sync", systemImage: "icloud.and.arrow.up.slash")
+                .font(.caption)
+                .foregroundStyle(.orange)
         case .failed:
             Label("Save Failed", systemImage: "exclamationmark.triangle")
                 .font(.caption)
@@ -143,14 +176,45 @@ struct NoteEditorView: View {
     private func load() async {
         isLoading = true
         loadError = nil
+
+        if isOfflineEditingActive {
+            do {
+                try loadFromCache()
+            } catch OfflineStoreError.notCached {
+                loadError = "Not available offline — download it while connected."
+            } catch {
+                loadError = error.localizedDescription
+            }
+            isLoading = false
+            return
+        }
+
         do {
             let (loadedText, loadedDEK) = try await noteContentService.loadContent(for: item)
             text = loadedText
             dek = loadedDEK
+            usingOfflineCopy = false
         } catch {
-            loadError = error.localizedDescription
+            // The network is nominally up but the fetch failed. If this note is downloaded, the
+            // cached copy is a better answer than an error — fall back to it and keep the session
+            // offline-first, so edits are persisted locally and synced by SyncEngine rather than
+            // repeatedly failing against the same flaky connection.
+            if FeatureFlags.offlineEditing, offlineStore.isAvailableOffline(item.id),
+               (try? loadFromCache()) != nil {
+                loadError = nil
+            } else {
+                loadError = error.localizedDescription
+            }
         }
         isLoading = false
+    }
+
+    /// Reads this note's text and DEK out of the offline cache and marks the session offline-first.
+    private func loadFromCache() throws {
+        let (loadedText, loadedDEK) = try offlineStore.readPlaintext(id: item.id)
+        text = loadedText
+        dek = loadedDEK
+        usingOfflineCopy = true
     }
 
     private func loadErrorView(_ message: String) -> some View {
@@ -186,13 +250,45 @@ struct NoteEditorView: View {
         guard isDirty, let dek else { return }
         isDirty = false
         saveStatus = .saving
+
+        if isOfflineEditingActive || (usingOfflineCopy && offlineStore.isAvailableOffline(item.id)) {
+            guard offlineStore.isAvailableOffline(item.id) else {
+                saveStatus = .failed("This note isn't downloaded, so offline edits can't be saved.")
+                isDirty = true
+                return
+            }
+            do {
+                try offlineStore.writePendingEdit(text, id: item.id, dek: dek)
+                saveStatus = .savedOffline
+            } catch {
+                saveStatus = .failed(error.localizedDescription)
+                isDirty = true
+            }
+            return
+        }
+
         do {
             let updatedAt = try await noteContentService.saveContent(text, for: item, dek: dek)
             notesDriveService.noteContentWasSaved(itemID: item.id, size: Int64(text.utf8.count), modifiedAt: updatedAt)
+            if FeatureFlags.offlineEditing && offlineStore.isAvailableOffline(item.id) {
+                refreshOfflineCache(savedAt: updatedAt, dek: dek)
+            }
             saveStatus = .saved
         } catch {
             saveStatus = .failed(error.localizedDescription)
             isDirty = true
+        }
+    }
+
+    /// After a successful online save, brings the offline cache up to the version just uploaded.
+    /// Re-encrypts locally rather than re-downloading — the bytes are already in hand. Best-effort
+    /// and non-fatal: the online save has already succeeded regardless of the outcome, and a stale
+    /// cache entry is corrected by the next download or sync.
+    private func refreshOfflineCache(savedAt: Date, dek: Bytes) {
+        do {
+            try offlineStore.cacheLocalVersion(text, id: item.id, dek: dek, serverModifiedAt: savedAt)
+        } catch {
+            // Intentionally ignored — see doc comment above.
         }
     }
 }
@@ -213,5 +309,7 @@ struct NoteEditorView: View {
         ))
         .environmentObject(NotesDriveService())
         .environmentObject(NoteContentService())
+        .environmentObject(OfflineStore())
+        .environmentObject(NetworkMonitor())
     }
 }

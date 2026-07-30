@@ -18,6 +18,7 @@ A secure, offline-capable Markdown editor for the Neutrino ecosystem. Built with
 | Epic 3 | Key Import & Encryption | COMPLETE |
 | Epic 4 | Drive Integration | COMPLETE |
 | Epic 5 | Editor | COMPLETE |
+| Epic 9 | Offline Editing | COMPLETE |
 
 See [agent_docs/road_map.md](agent_docs/road_map.md) for the full roadmap.
 
@@ -38,5 +39,7 @@ The app is structured as a five-tab SwiftUI shell with tabs for Notes, Recents, 
 Authentication reuses Neutrino Drive's three-step OAuth PKCE flow (`AuthService`/`KeychainService`, ported from the Drive app) against the shared Neutrino Auth service: a session login, an in-app authorization step, and a token exchange, with access/refresh tokens persisted in the Keychain under `nn.*` keys distinct from Drive's `nd.*` keys. `NeutrinoNotesApp` gates `ContentView` behind `authService.isAuthenticated`, showing `LoginView` otherwise, and refreshes the token on launch if a session already exists. Encryption keys are imported and stored the same way as the Drive app (`KeyImportService`, `KeyQRDecryptService`), landing in the Keychain alongside the auth tokens.
 
 The Notes tab is backed by `NotesDriveService`, which reuses Neutrino Drive's existing folder/file/trash REST APIs — there is no separate Notes backend. It filters every response down to folders and `text/markdown` files, and exposes optimistic `createFolder`/`rename`/`move`/`delete`/`restore` mutations (`NoteBrowserView`, `CreateFolderSheet`, `RenameSheet`, `MoveSheet`) so users can organize their notes exactly as they do on the web.
+
+Offline support (`OfflineStore`, `SyncEngine`, `NetworkMonitor`) caches notes the user explicitly downloads via "Make Available Offline". The cache holds the server's ciphertext byte-for-byte and re-encrypts local edits with the same per-file DEK, so nothing is ever written to disk as plaintext and reading it back still requires the Keychain key pair. Edits made without a connection are written to a pending blob and queued; `SyncEngine` drains the queue on reconnect, on app foreground, and on demand, with exponential backoff on failure. Before every upload it compares the server's current `updatedAt` against the version the edit was based on — if the server has moved ahead, the note is flagged as a conflict rather than uploaded, and the Offline tab lets the user keep either version. Note that `SyncEngine` currently runs only while the app is alive; `BGTaskScheduler` background refresh belongs to Epic 8.
 
 Note *content* is handled separately by `NoteContentService`, which mirrors the Drive app's upload/download encryption protocol exactly (XChaCha20-Poly1305 secretstream for the body, `crypto_box_seal` for the per-file key) so notes are readable by the web app and vice versa. `NoteEditorView` provides live Markdown editing over a plain `TextEditor`, debounced autosave via the Drive `PUT /files/{id}/autosave` endpoint, system undo/redo, word/character counts and estimated reading time (`NoteTextStats`), and find & replace via SwiftUI's `findNavigator`.

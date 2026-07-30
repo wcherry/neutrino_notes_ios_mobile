@@ -10,4 +10,8 @@ enum FeatureFlags {
     /// Set to true to enable the Epic 5 Markdown Editor feature.
     /// When false, the "New Note" button is hidden and tapping a note does nothing.
     static let markdownEditor: Bool = true
+
+    /// Set to true to enable the Epic 9 Offline Editing feature (downloading notes for offline
+    /// access, editing without a connection, and syncing queued changes when connectivity returns).
+    static let offlineEditing: Bool = true
 }

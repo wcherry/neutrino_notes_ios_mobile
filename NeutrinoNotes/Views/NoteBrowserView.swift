@@ -18,6 +18,7 @@ struct NoteBrowserView: View {
 
     @EnvironmentObject var notesDriveService: NotesDriveService
     @EnvironmentObject var noteContentService: NoteContentService
+    @EnvironmentObject var offlineStore: OfflineStore
 
     // MARK: - State
 
@@ -27,6 +28,10 @@ struct NoteBrowserView: View {
     @State private var itemToRename: NoteItem?
     @State private var itemToMove: NoteItem?
     @State private var createNoteError: String?
+    /// Epic 9: the item currently being downloaded for offline access, so its row can show a
+    /// progress indicator instead of the static "available offline" badge.
+    @State private var downloadingItemID: String?
+    @State private var offlineActionError: String?
 
     // MARK: - Computed
 
@@ -109,6 +114,14 @@ struct NoteBrowserView: View {
         } message: {
             Text("This will permanently delete all items in the Trash. This action cannot be undone.")
         }
+        .alert("Offline Download", isPresented: Binding(
+            get: { offlineActionError != nil },
+            set: { if !$0 { offlineActionError = nil } }
+        )) {
+            Button("OK") { offlineActionError = nil }
+        } message: {
+            Text(offlineActionError ?? "")
+        }
     }
 
     // MARK: - Note List
@@ -130,10 +143,10 @@ struct NoteBrowserView: View {
         Group {
             if item.type == .folder || FeatureFlags.markdownEditor {
                 NavigationLink(value: item) {
-                    NoteRowView(item: item)
+                    NoteRowView(item: item, offlineBadge: offlineBadge(for: item))
                 }
             } else {
-                NoteRowView(item: item)
+                NoteRowView(item: item, offlineBadge: offlineBadge(for: item))
             }
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
@@ -177,6 +190,7 @@ struct NoteBrowserView: View {
                 Label("Rename", systemImage: "pencil")
             }
             .tint(.orange)
+            offlineSwipeAction(for: item)
         case .trash:
             Button {
                 notesDriveService.restore(itemID: item.id)
@@ -184,6 +198,27 @@ struct NoteBrowserView: View {
                 Label("Restore", systemImage: "arrow.uturn.backward")
             }
             .tint(.green)
+        }
+    }
+
+    @ViewBuilder
+    private func offlineSwipeAction(for item: NoteItem) -> some View {
+        if FeatureFlags.offlineEditing && item.type == .file {
+            if offlineStore.isAvailableOffline(item.id) {
+                Button(role: .destructive) {
+                    removeOfflineDownload(item)
+                } label: {
+                    Label("Remove Download", systemImage: "arrow.down.circle")
+                }
+            } else {
+                Button {
+                    Task { await downloadOffline(item) }
+                } label: {
+                    Label("Make Available Offline", systemImage: "arrow.down.circle")
+                }
+                .tint(.blue)
+                .disabled(downloadingItemID == item.id)
+            }
         }
     }
 
@@ -203,6 +238,7 @@ struct NoteBrowserView: View {
             } label: {
                 Label("Move", systemImage: "folder")
             }
+            offlineContextMenuItems(for: item)
             Divider()
             Button(role: .destructive) {
                 notesDriveService.delete(itemID: item.id)
@@ -220,6 +256,55 @@ struct NoteBrowserView: View {
             } label: {
                 Label("Delete Forever", systemImage: "trash.slash")
             }
+        }
+    }
+
+    @ViewBuilder
+    private func offlineContextMenuItems(for item: NoteItem) -> some View {
+        if FeatureFlags.offlineEditing && item.type == .file {
+            if offlineStore.isAvailableOffline(item.id) {
+                Button(role: .destructive) {
+                    removeOfflineDownload(item)
+                } label: {
+                    Label("Remove Download", systemImage: "arrow.down.circle")
+                }
+            } else {
+                Button {
+                    Task { await downloadOffline(item) }
+                } label: {
+                    Label("Make Available Offline", systemImage: "arrow.down.circle")
+                }
+                .disabled(downloadingItemID == item.id)
+            }
+        }
+    }
+
+    // MARK: - Offline Actions
+
+    /// Epic 9: badge shown on a row's `NoteRowView` reflecting download/cache state.
+    /// Only Markdown files can be made available offline — folders are never cached.
+    private func offlineBadge(for item: NoteItem) -> NoteRowView.OfflineBadge? {
+        guard FeatureFlags.offlineEditing, item.type == .file else { return nil }
+        if downloadingItemID == item.id { return .downloading }
+        guard let note = offlineStore.note(id: item.id) else { return nil }
+        return note.pendingEdit != nil ? .unsyncedChanges : .available
+    }
+
+    private func downloadOffline(_ item: NoteItem) async {
+        downloadingItemID = item.id
+        defer { downloadingItemID = nil }
+        do {
+            try await offlineStore.download(item)
+        } catch {
+            offlineActionError = error.localizedDescription
+        }
+    }
+
+    private func removeOfflineDownload(_ item: NoteItem) {
+        do {
+            try offlineStore.remove(id: item.id)
+        } catch {
+            offlineActionError = error.localizedDescription
         }
     }
 
@@ -328,5 +413,6 @@ struct NoteBrowserView: View {
         NoteBrowserView(section: .myNotes, parentID: nil)
             .environmentObject(NotesDriveService())
             .environmentObject(NoteContentService())
+            .environmentObject(OfflineStore())
     }
 }

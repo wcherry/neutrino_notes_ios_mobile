@@ -206,6 +206,61 @@ final class NoteContentService: ObservableObject {
         }
     }
 
+    // MARK: - Offline Support
+
+    /// Downloads a note's still-encrypted body together with its sealed DEK, without decrypting.
+    /// Used by OfflineStore so the cache-at-rest blob is byte-identical to the server's.
+    func downloadEncrypted(for item: NoteItem) async throws -> (ciphertext: Data, sealedDEK: String) {
+        logger.debug("downloadEncrypted: id=\(item.id, privacy: .public)")
+        let token = try await authorizedToken()
+        let sealedDEK = try await fetchSealedDEK(fileID: item.id, token: token)
+        let ciphertext = try await fetchEncryptedContent(fileID: item.id, token: token)
+        logger.debug("downloadEncrypted: id=\(item.id, privacy: .public) \(ciphertext.count) encrypted bytes")
+        return (ciphertext, sealedDEK)
+    }
+
+    /// The server's current `updatedAt` for a file, used for conflict detection.
+    ///
+    /// Drive has no per-file metadata endpoint — `GET /files/{id}` returns the encrypted body,
+    /// not JSON metadata — so the only way to read a file's current `updatedAt` is to list the
+    /// folder that contains it and pick the matching entry. Root-level notes come from
+    /// `GET /drive?type=note`; notes inside a folder from `GET /drive/folders/{id}`.
+    ///
+    /// Returns nil if the file is no longer present server-side (deleted, trashed, or moved to
+    /// a different folder than the caller's cached `parentID`).
+    func fetchServerModifiedAt(for item: NoteItem) async throws -> Date? {
+        let token = try await authorizedToken()
+        let path = item.parentID.map { "/api/v1/drive/folders/\($0)" } ?? "/api/v1/drive?type=note"
+        guard let url = URL(string: baseURL + path) else {
+            throw NoteContentError.serverError(statusCode: 0)
+        }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            throw NoteContentError.networkError(underlying: error)
+        }
+        if let http = response as? HTTPURLResponse, http.statusCode == 404 {
+            // The containing folder is gone, so the file is gone with it.
+            return nil
+        }
+        try Self.checkStatus(response)
+
+        let listing: APIFolderListingResponse
+        do {
+            listing = try Self.decoder.decode(APIFolderListingResponse.self, from: data)
+        } catch {
+            throw NoteContentError.decodingError(underlying: error)
+        }
+        let match = listing.files.first { $0.id == item.id }?.updatedAt
+        logger.debug("fetchServerModifiedAt: id=\(item.id, privacy: .public) found=\(match != nil)")
+        return match
+    }
+
     // MARK: - Crypto Helpers (internal for unit testing)
 
     /// Encrypts `text` as [24-byte header][ciphertext] using XChaCha20-Poly1305 secretstream.
@@ -485,6 +540,11 @@ private struct APIFileResponse: Decodable {
     let sizeBytes: Int64
     let mimeType: String
     let updatedAt: Date
+}
+
+/// Folder/root listing, used only to look up a file's current `updatedAt`.
+private struct APIFolderListingResponse: Decodable {
+    let files: [APIFileResponse]
 }
 
 private struct APIKeyResponse: Decodable {
