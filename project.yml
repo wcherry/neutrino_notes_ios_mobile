@@ -27,7 +27,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.neutrino.notes
         MARKETING_VERSION: "1.0.0"
-        CURRENT_PROJECT_VERSION: "1"
+        CURRENT_PROJECT_VERSION: "5"
         SWIFT_VERSION: "5.0"
         IPHONEOS_DEPLOYMENT_TARGET: "16.0"
         DEVELOPMENT_TEAM: "46KWJJ63FU"
@@ -38,6 +38,10 @@ targets:
       properties:
         CFBundleName: Neutrino Notes
         CFBundleDisplayName: Neutrino Notes
+        # Without these, xcodegen writes literal "1.0"/"1" into Info.plist and the
+        # MARKETING_VERSION / CURRENT_PROJECT_VERSION build settings are ignored.
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait

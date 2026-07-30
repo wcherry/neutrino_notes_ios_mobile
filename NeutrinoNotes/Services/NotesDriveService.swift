@@ -51,33 +51,11 @@ final class NotesDriveService: ObservableObject {
     // MARK: - Shared decoder
 
     private static let decoder: JSONDecoder = {
-        let make = { (format: String) -> DateFormatter in
-            let f = DateFormatter()
-            f.dateFormat = format
-            f.locale = Locale(identifier: "en_US_POSIX")
-            f.timeZone = TimeZone(secondsFromGMT: 0)
-            return f
-        }
-        let formatters = [
-            make("yyyy-MM-dd'T'HH:mm:ss.SSSSSS"),   // with microseconds
-            make("yyyy-MM-dd'T'HH:mm:ss"),           // without fractional seconds
-        ]
         let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "NeutrinoNotes",
                             category: "NotesDriveService")
-        let d = JSONDecoder()
-        d.keyDecodingStrategy = .convertFromSnakeCase
-        d.dateDecodingStrategy = .custom { decoder in
-            let raw = try decoder.singleValueContainer().decode(String.self)
-            for formatter in formatters {
-                if let date = formatter.date(from: raw) { return date }
-            }
-            logger.error("date decode failed: unexpected value=\(raw, privacy: .public) at \(decoder.codingPath.map(\.stringValue).joined(separator: "."), privacy: .public)")
-            throw DecodingError.dataCorrupted(.init(
-                codingPath: decoder.codingPath,
-                debugDescription: "Cannot parse date: \(raw)"
-            ))
+        return DriveDate.makeDecoder(convertFromSnakeCase: true) { raw in
+            logger.error("date decode failed: unexpected value=\(raw, privacy: .public)")
         }
-        return d
     }()
 
     // MARK: - Logging

@@ -17,6 +17,7 @@ struct NoteEditorView: View {
     @EnvironmentObject var noteContentService: NoteContentService
     @EnvironmentObject var offlineStore: OfflineStore
     @EnvironmentObject var networkMonitor: NetworkMonitor
+    @EnvironmentObject var versionHistoryService: VersionHistoryService
     @Environment(\.undoManager) private var undoManager
 
     // MARK: - State
@@ -36,6 +37,8 @@ struct NoteEditorView: View {
     /// because the device is offline, or because the network load failed and a cached copy existed.
     /// Saves then go to the cache and are picked up by SyncEngine, so the edit is durable either way.
     @State private var usingOfflineCopy = false
+    @State private var showVersionHistory = false
+    @State private var showSaveVersionSheet = false
 
     private enum SaveStatus: Equatable {
         case idle
@@ -48,6 +51,12 @@ struct NoteEditorView: View {
     /// True when the offline-editing UI should engage for this session.
     private var isOfflineEditingActive: Bool {
         FeatureFlags.offlineEditing && !networkMonitor.isOnline
+    }
+
+    /// Version history is a server-side feature: snapshots aren't cached on the device, and
+    /// saving one is a write. Both actions need the note's DEK, which only a loaded session has.
+    private var isVersioningAvailable: Bool {
+        FeatureFlags.versionHistory && dek != nil && networkMonitor.isOnline && !usingOfflineCopy
     }
 
     // MARK: - Body
@@ -70,6 +79,18 @@ struct NoteEditorView: View {
         .onDisappear {
             pendingSaveTask?.cancel()
             if isDirty { Task { await save() } }
+        }
+        .sheet(isPresented: $showVersionHistory) {
+            if let dek {
+                VersionHistoryView(item: item, dek: dek, currentText: text) { modifiedAt, sizeBytes in
+                    Task { await reloadAfterRestore(modifiedAt: modifiedAt, sizeBytes: sizeBytes) }
+                }
+            }
+        }
+        .sheet(isPresented: $showSaveVersionSheet) {
+            SaveVersionSheet { label in
+                Task { await saveVersion(label: label) }
+            }
         }
     }
 
@@ -187,6 +208,22 @@ struct NoteEditorView: View {
                 Label("Redo", systemImage: "arrow.uturn.forward")
             }
             .disabled(undoManager?.canRedo != true)
+
+            if FeatureFlags.versionHistory {
+                Button {
+                    showSaveVersionSheet = true
+                } label: {
+                    Label("Save Version…", systemImage: "bookmark")
+                }
+                .disabled(!isVersioningAvailable)
+
+                Button {
+                    showVersionHistory = true
+                } label: {
+                    Label("Version History", systemImage: "clock.arrow.circlepath")
+                }
+                .disabled(!isVersioningAvailable)
+            }
         }
     }
 
@@ -299,6 +336,44 @@ struct NoteEditorView: View {
         }
     }
 
+    // MARK: - Version History
+
+    /// Saves the text currently on screen as a named snapshot. The server makes it the note's
+    /// current content too, so this doubles as a save — the pending autosave is dropped rather
+    /// than left to re-upload the identical bytes a moment later.
+    private func saveVersion(label: String?) async {
+        guard let dek else { return }
+        pendingSaveTask?.cancel()
+        saveStatus = .saving
+        do {
+            let version = try await versionHistoryService.saveVersion(text, for: item, dek: dek, label: label)
+            isDirty = false
+            // The snapshot's timestamp is the server's clock for this write; the device's is not.
+            let savedAt = version.createdAt
+            notesDriveService.noteContentWasSaved(itemID: item.id, size: Int64(text.utf8.count), modifiedAt: savedAt)
+            if FeatureFlags.offlineEditing && offlineStore.isAvailableOffline(item.id) {
+                refreshOfflineCache(savedAt: savedAt, dek: dek)
+            }
+            saveStatus = .saved
+        } catch {
+            saveStatus = .failed(error.localizedDescription)
+        }
+    }
+
+    /// Pulls the restored content back into the editor. Any in-flight autosave is cancelled and
+    /// the session marked clean first, so the pre-restore text can't be written back over the
+    /// version the user just restored.
+    private func reloadAfterRestore(modifiedAt: Date, sizeBytes: Int64) async {
+        pendingSaveTask?.cancel()
+        isDirty = false
+        saveStatus = .idle
+        await load()
+        notesDriveService.noteContentWasSaved(itemID: item.id, size: sizeBytes, modifiedAt: modifiedAt)
+        if FeatureFlags.offlineEditing, offlineStore.isAvailableOffline(item.id), let dek {
+            refreshOfflineCache(savedAt: modifiedAt, dek: dek)
+        }
+    }
+
     /// After a successful online save, brings the offline cache up to the version just uploaded.
     /// Re-encrypts locally rather than re-downloading — the bytes are already in hand. Best-effort
     /// and non-fatal: the online save has already succeeded regardless of the outcome, and a stale
@@ -330,5 +405,6 @@ struct NoteEditorView: View {
         .environmentObject(NoteContentService())
         .environmentObject(OfflineStore())
         .environmentObject(NetworkMonitor())
+        .environmentObject(VersionHistoryService())
     }
 }

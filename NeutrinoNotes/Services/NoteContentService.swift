@@ -53,32 +53,7 @@ final class NoteContentService: ObservableObject {
         UserDefaults.standard.string(forKey: AuthService.serverHostKey) ?? AuthService.defaultHost
     }
 
-    private static let decoder: JSONDecoder = {
-        let make = { (format: String) -> DateFormatter in
-            let f = DateFormatter()
-            f.dateFormat = format
-            f.locale = Locale(identifier: "en_US_POSIX")
-            f.timeZone = TimeZone(secondsFromGMT: 0)
-            return f
-        }
-        let formatters = [
-            make("yyyy-MM-dd'T'HH:mm:ss.SSSSSS"),
-            make("yyyy-MM-dd'T'HH:mm:ss"),
-        ]
-        let d = JSONDecoder()
-        d.keyDecodingStrategy = .convertFromSnakeCase
-        d.dateDecodingStrategy = .custom { decoder in
-            let raw = try decoder.singleValueContainer().decode(String.self)
-            for formatter in formatters {
-                if let date = formatter.date(from: raw) { return date }
-            }
-            throw DecodingError.dataCorrupted(.init(
-                codingPath: decoder.codingPath,
-                debugDescription: "Cannot parse date: \(raw)"
-            ))
-        }
-        return d
-    }()
+    private static let decoder: JSONDecoder = DriveDate.makeDecoder(convertFromSnakeCase: true)
 
     // MARK: - Create
 
@@ -94,10 +69,9 @@ final class NoteContentService: ObservableObject {
         let sealedFileKey = try sealDEK(dek)
         logger.error("createNote: dek(b64)=\(Self.b64(dek), privacy: .public) encryptedContent=\(encryptedContent.count) bytes sha256=\(Self.fingerprint(encryptedContent), privacy: .public)")
 
-        let boundary = UUID().uuidString
-        let body = buildUploadBody(
+        let form = buildUploadBody(
             encryptedData: encryptedContent, fileName: name, mimeType: NoteItem.markdownMIME,
-            parentFolderID: parentID, encryptedMetadata: encryptedMetadata, boundary: boundary
+            parentFolderID: parentID, encryptedMetadata: encryptedMetadata
         )
 
         guard let url = URL(string: baseURL + "/api/v1/drive/files/upload") else {
@@ -105,10 +79,10 @@ final class NoteContentService: ObservableObject {
         }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        request.setValue(form.contentType, forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
-        let (data, response) = try await upload(request, body: body)
+        let (data, response) = try await upload(request, body: form.finalized())
         try Self.checkStatus(response)
         let created: APIFileResponse
         do {
@@ -183,19 +157,18 @@ final class NoteContentService: ObservableObject {
         // sending the raw bytes as application/octet-stream trips actix-multipart's
         // ContentTypeIncompatible check. No encrypted_metadata or folder_id here; those only
         // apply on create.
-        let boundary = UUID().uuidString
-        let body = buildUploadBody(
+        let form = buildUploadBody(
             encryptedData: encryptedContent, fileName: item.name,
             mimeType: item.mimeType ?? NoteItem.markdownMIME,
-            parentFolderID: nil, encryptedMetadata: nil, boundary: boundary
+            parentFolderID: nil, encryptedMetadata: nil
         )
 
         var request = URLRequest(url: url)
         request.httpMethod = "PUT"
-        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        request.setValue(form.contentType, forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
-        let (data, response) = try await upload(request, body: body)
+        let (data, response) = try await upload(request, body: form.finalized())
         try Self.checkStatus(response)
         do {
             let updated = try Self.decoder.decode(APIFileResponse.self, from: data)
@@ -492,42 +465,13 @@ final class NoteContentService: ObservableObject {
         fileName: String,
         mimeType: String,
         parentFolderID: String?,
-        encryptedMetadata: String?,
-        boundary: String
-    ) -> Data {
-        var body = Data()
-        let dash = "--"
-        let crlf = "\r\n"
-
-        func append(_ string: String) {
-            body.append(Data(string.utf8))
-        }
-
-        if let encryptedMetadata {
-            append("\(dash)\(boundary)\(crlf)")
-            append("Content-Disposition: form-data; name=\"encrypted_metadata\"\(crlf)")
-            append(crlf)
-            append(encryptedMetadata)
-            append(crlf)
-        }
-
-        if let folderID = parentFolderID {
-            append("\(dash)\(boundary)\(crlf)")
-            append("Content-Disposition: form-data; name=\"folder_id\"\(crlf)")
-            append(crlf)
-            append(folderID)
-            append(crlf)
-        }
-
-        append("\(dash)\(boundary)\(crlf)")
-        append("Content-Disposition: form-data; name=\"file\"; filename=\"\(fileName)\"\(crlf)")
-        append("Content-Type: \(mimeType)\(crlf)")
-        append(crlf)
-        body.append(encryptedData)
-        append(crlf)
-
-        append("\(dash)\(boundary)\(dash)\(crlf)")
-        return body
+        encryptedMetadata: String?
+    ) -> MultipartFormBody {
+        var form = MultipartFormBody()
+        form.appendField(name: "encrypted_metadata", value: encryptedMetadata)
+        form.appendField(name: "folder_id", value: parentFolderID)
+        form.appendFile(name: "file", fileName: fileName, mimeType: mimeType, data: encryptedData)
+        return form
     }
 }
 

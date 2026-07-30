@@ -79,4 +79,5 @@ struct NotesView: View {
         .environmentObject(AuthService())
         .environmentObject(NotesDriveService())
         .environmentObject(NoteContentService())
+        .environmentObject(VersionHistoryService())
 }

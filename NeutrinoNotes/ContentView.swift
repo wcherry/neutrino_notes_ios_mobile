@@ -64,4 +64,5 @@ struct ContentView: View {
         .environmentObject(NetworkMonitor())
         .environmentObject(OfflineStore())
         .environmentObject(SyncEngine(store: OfflineStore(), monitor: NetworkMonitor(), content: NoteContentService()))
+        .environmentObject(VersionHistoryService())
 }
