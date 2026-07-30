@@ -90,11 +90,6 @@ final class NotesDriveService: ObservableObject {
     /// Set once at app launch by NeutrinoNotesApp so the service can refresh tokens before requests.
     weak var authService: AuthService?
 
-    /// Set once at app launch by NeutrinoNotesApp. Mutation failures that are classified as
-    /// retryable (transient network errors, 5xx) are enqueued here instead of being reverted
-    /// and lost — see the `catch` blocks below.
-    weak var syncEngine: SyncEngine?
-
     private var baseURL: String {
         UserDefaults.standard.string(forKey: AuthService.serverHostKey) ?? AuthService.defaultHost
     }
@@ -134,24 +129,10 @@ final class NotesDriveService: ObservableObject {
                     let dropped = allFiles.filter { !NoteItem.isVisibleInNotes($0) }
                     logger.debug("loadSection myNotes: filtered out \(dropped.count) non-Markdown file(s): \(dropped.map { "\($0.name) [\($0.mimeType ?? "nil")]" }.joined(separator: ", "), privacy: .public)")
                 }
-                // Delta diff against the cached listing instead of a wholesale replace: items
-                // whose modifiedAt is unchanged are left alone entirely (same value, avoids
-                // needless SwiftUI churn/re-identification); new/changed items are upserted;
-                // items under this parentID no longer present server-side are removed. (Trash
-                // stays wholesale-replace below — it doesn't need this optimization.)
-                let serverItems = folders + files
-                var serverIDsSeen = Set<String>()
-                for serverItem in serverItems {
-                    serverIDsSeen.insert(serverItem.id)
-                    if let idx = allItems.firstIndex(where: { $0.id == serverItem.id }) {
-                        if allItems[idx].modifiedAt != serverItem.modifiedAt {
-                            allItems[idx] = serverItem
-                        }
-                    } else {
-                        allItems.append(serverItem)
-                    }
-                }
-                allItems.removeAll { $0.parentID == parentID && !serverIDsSeen.contains($0.id) }
+                // Replace cached items for this parent to avoid stale duplicates.
+                allItems.removeAll { $0.parentID == parentID }
+                allItems.append(contentsOf: folders)
+                allItems.append(contentsOf: files)
                 logger.debug("loadSection myNotes: displaying \(folders.count) folders, \(files.count) Markdown files")
 
             case .trash:
@@ -191,14 +172,8 @@ final class NotesDriveService: ObservableObject {
                 logger.debug("createFolder succeeded: id=\(created.id, privacy: .public)")
             } catch {
                 logger.error("createFolder failed: name=\(name, privacy: .public) error=\(error, privacy: .public)")
-                if SyncErrorClassifier.isRetryable(error) {
-                    // Keep the placeholder as-is (no flicker) — queued for retry.
-                    let entry = SyncQueueEntry.createFolder(placeholderID: placeholder.id, name: name, parentID: parentID)
-                    syncEngine?.enqueue(entry)
-                } else {
-                    allItems.removeAll { $0.id == placeholder.id }
-                    self.error = error.localizedDescription
-                }
+                allItems.removeAll { $0.id == placeholder.id }
+                self.error = error.localizedDescription
             }
         }
     }
@@ -222,15 +197,8 @@ final class NotesDriveService: ObservableObject {
                 logger.debug("rename succeeded: id=\(itemID, privacy: .public)")
             } catch {
                 logger.error("rename failed: id=\(itemID, privacy: .public) error=\(error, privacy: .public)")
-                if SyncErrorClassifier.isRetryable(error) {
-                    let entry = isFolder
-                        ? SyncQueueEntry.renameFolder(itemID: itemID, newName: newName, previousName: old)
-                        : SyncQueueEntry.renameFile(itemID: itemID, newName: newName, previousName: old)
-                    syncEngine?.enqueue(entry)
-                } else {
-                    if let i = index(of: itemID) { allItems[i].name = old }
-                    self.error = error.localizedDescription
-                }
+                if let i = index(of: itemID) { allItems[i].name = old }
+                self.error = error.localizedDescription
             }
         }
     }
@@ -250,15 +218,8 @@ final class NotesDriveService: ObservableObject {
                     logger.debug("delete (permanent) succeeded: id=\(itemID, privacy: .public)")
                 } catch {
                     logger.error("delete (permanent) failed: id=\(itemID, privacy: .public) error=\(error, privacy: .public)")
-                    if SyncErrorClassifier.isRetryable(error) {
-                        let entry = item.type == .folder
-                            ? SyncQueueEntry.permanentDeleteFolder(itemID: itemID, snapshot: item)
-                            : SyncQueueEntry.permanentDeleteFile(itemID: itemID, snapshot: item)
-                        syncEngine?.enqueue(entry)
-                    } else {
-                        trashItems.append(item)
-                        self.error = error.localizedDescription
-                    }
+                    trashItems.append(item)
+                    self.error = error.localizedDescription
                 }
             }
         } else if let idx = index(of: itemID) {
@@ -281,16 +242,9 @@ final class NotesDriveService: ObservableObject {
                     logger.debug("delete (trash) succeeded: id=\(itemID, privacy: .public)")
                 } catch {
                     logger.error("delete (trash) failed: id=\(itemID, privacy: .public) error=\(error, privacy: .public)")
-                    if SyncErrorClassifier.isRetryable(error) {
-                        let entry = item.type == .folder
-                            ? SyncQueueEntry.trashFolder(itemID: itemID, snapshot: item)
-                            : SyncQueueEntry.trashFile(itemID: itemID, snapshot: item)
-                        syncEngine?.enqueue(entry)
-                    } else {
-                        trashItems.removeAll { $0.id == itemID }
-                        allItems.append(item)
-                        self.error = error.localizedDescription
-                    }
+                    trashItems.removeAll { $0.id == itemID }
+                    allItems.append(item)
+                    self.error = error.localizedDescription
                 }
             }
         }
@@ -312,22 +266,14 @@ final class NotesDriveService: ObservableObject {
                 logger.debug("move succeeded: id=\(itemID, privacy: .public)")
             } catch {
                 logger.error("move failed: id=\(itemID, privacy: .public) error=\(error, privacy: .public)")
-                if SyncErrorClassifier.isRetryable(error) {
-                    let entry = item.type == .folder
-                        ? SyncQueueEntry.moveFolder(itemID: itemID, newParentID: newParentID, previousParentID: oldParent)
-                        : SyncQueueEntry.moveFile(itemID: itemID, newParentID: newParentID, previousParentID: oldParent)
-                    syncEngine?.enqueue(entry)
-                } else {
-                    if let i = index(of: itemID) { allItems[i].parentID = oldParent }
-                    self.error = error.localizedDescription
-                }
+                if let i = index(of: itemID) { allItems[i].parentID = oldParent }
+                self.error = error.localizedDescription
             }
         }
     }
 
     func restore(itemID: String) {
         guard let idx = trashItems.firstIndex(where: { $0.id == itemID }) else { return }
-        let trashedSnapshot = trashItems[idx] // isTrashed == true, used for the retry-queue snapshot
         var item = trashItems.remove(at: idx)
         logger.debug("restore: id=\(itemID, privacy: .public) name=\(item.name, privacy: .public)")
         item.isTrashed = false
@@ -342,16 +288,9 @@ final class NotesDriveService: ObservableObject {
                 logger.debug("restore succeeded: id=\(itemID, privacy: .public)")
             } catch {
                 logger.error("restore failed: id=\(itemID, privacy: .public) error=\(error, privacy: .public)")
-                if SyncErrorClassifier.isRetryable(error) {
-                    let entry = item.type == .folder
-                        ? SyncQueueEntry.restoreFolder(itemID: itemID, snapshot: trashedSnapshot)
-                        : SyncQueueEntry.restoreFile(itemID: itemID, snapshot: trashedSnapshot)
-                    syncEngine?.enqueue(entry)
-                } else {
-                    allItems.removeAll { $0.id == itemID }
-                    trashItems.append(item)
-                    self.error = error.localizedDescription
-                }
+                allItems.removeAll { $0.id == itemID }
+                trashItems.append(item)
+                self.error = error.localizedDescription
             }
         }
     }
@@ -366,12 +305,8 @@ final class NotesDriveService: ObservableObject {
                 logger.debug("emptyTrash succeeded")
             } catch {
                 logger.error("emptyTrash failed: \(error, privacy: .public)")
-                if SyncErrorClassifier.isRetryable(error) {
-                    syncEngine?.enqueue(SyncQueueEntry.emptyTrash(snapshot: snapshot))
-                } else {
-                    trashItems = snapshot
-                    self.error = error.localizedDescription
-                }
+                trashItems = snapshot
+                self.error = error.localizedDescription
             }
         }
     }
@@ -387,106 +322,6 @@ final class NotesDriveService: ObservableObject {
     func noteContentWasSaved(itemID: String, size: Int64, modifiedAt: Date) {
         if let idx = index(of: itemID) {
             allItems[idx].size = size
-            allItems[idx].modifiedAt = modifiedAt
-        }
-    }
-
-    // MARK: - Queue Drain (SyncEngine integration)
-
-    /// Performs the raw network call for a queued operation — called by `SyncEngine`'s
-    /// executor when draining the retry queue. Intentionally does none of the optimistic
-    /// local-state mutation the methods above do synchronously; that already happened at
-    /// enqueue time (or the entry wouldn't exist). `reconcile(entry:outcome:)` below folds in
-    /// anything the immediate optimistic update couldn't have known yet.
-    func performRemote(_ entry: SyncQueueEntry) async throws -> SyncOperationOutcome {
-        switch entry.kind {
-        case .createFolder:
-            guard let name = entry.newName else { throw NotesDriveError.decodingError(underlying: SyncEngineError.malformedEntry) }
-            let body = APICreateFolderRequest(name: name, parentId: entry.newParentID)
-            let created: APIFolderResponse = try await post("/api/v1/drive/folders", body: body)
-            return SyncOperationOutcome(createdItem: NoteItem(folder: created), updatedModifiedAt: created.updatedAt)
-
-        case .renameFolder:
-            guard let itemID = entry.itemID, let newName = entry.newName else {
-                throw NotesDriveError.decodingError(underlying: SyncEngineError.malformedEntry)
-            }
-            let body = APIUpdateFolderRequest(name: newName)
-            let updated: APIFolderResponse = try await patch("/api/v1/drive/folders/\(itemID)", body: body)
-            return SyncOperationOutcome(updatedModifiedAt: updated.updatedAt)
-
-        case .renameFile:
-            guard let itemID = entry.itemID, let newName = entry.newName else {
-                throw NotesDriveError.decodingError(underlying: SyncEngineError.malformedEntry)
-            }
-            let body = APIUpdateFileRequest(name: newName)
-            let updated: APIFileResponse = try await patch("/api/v1/drive/files/\(itemID)", body: body)
-            return SyncOperationOutcome(updatedModifiedAt: updated.updatedAt)
-
-        case .trashFile:
-            guard let itemID = entry.itemID else { throw NotesDriveError.decodingError(underlying: SyncEngineError.malformedEntry) }
-            let body = APIBulkTrashRequest(fileIds: [itemID], folderIds: [])
-            let _: APIBulkResult = try await post("/api/v1/drive/bulk/trash", body: body)
-            return SyncOperationOutcome()
-
-        case .trashFolder:
-            guard let itemID = entry.itemID else { throw NotesDriveError.decodingError(underlying: SyncEngineError.malformedEntry) }
-            let body = APIBulkTrashRequest(fileIds: [], folderIds: [itemID])
-            let _: APIBulkResult = try await post("/api/v1/drive/bulk/trash", body: body)
-            return SyncOperationOutcome()
-
-        case .permanentDeleteFile:
-            guard let itemID = entry.itemID else { throw NotesDriveError.decodingError(underlying: SyncEngineError.malformedEntry) }
-            try await deleteRequest("/api/v1/drive/trash/files/\(itemID)")
-            return SyncOperationOutcome()
-
-        case .permanentDeleteFolder:
-            guard let itemID = entry.itemID else { throw NotesDriveError.decodingError(underlying: SyncEngineError.malformedEntry) }
-            try await deleteRequest("/api/v1/drive/trash/folders/\(itemID)")
-            return SyncOperationOutcome()
-
-        case .moveFile:
-            guard let itemID = entry.itemID else { throw NotesDriveError.decodingError(underlying: SyncEngineError.malformedEntry) }
-            let body = APIBulkMoveRequest(fileIds: [itemID], folderIds: [], targetFolderId: entry.newParentID)
-            let _: APIBulkResult = try await post("/api/v1/drive/bulk/move", body: body)
-            return SyncOperationOutcome()
-
-        case .moveFolder:
-            guard let itemID = entry.itemID else { throw NotesDriveError.decodingError(underlying: SyncEngineError.malformedEntry) }
-            let body = APIBulkMoveRequest(fileIds: [], folderIds: [itemID], targetFolderId: entry.newParentID)
-            let _: APIBulkResult = try await post("/api/v1/drive/bulk/move", body: body)
-            return SyncOperationOutcome()
-
-        case .restoreFile:
-            guard let itemID = entry.itemID else { throw NotesDriveError.decodingError(underlying: SyncEngineError.malformedEntry) }
-            try await post("/api/v1/drive/trash/files/\(itemID)/restore")
-            return SyncOperationOutcome()
-
-        case .restoreFolder:
-            guard let itemID = entry.itemID else { throw NotesDriveError.decodingError(underlying: SyncEngineError.malformedEntry) }
-            try await post("/api/v1/drive/trash/folders/\(itemID)/restore")
-            return SyncOperationOutcome()
-
-        case .emptyTrash:
-            let _: APIBulkResult = try await deleteRequest("/api/v1/drive/trash")
-            return SyncOperationOutcome()
-
-        case .saveNoteContent:
-            // Handled by NoteContentService — SyncEngine's executor routes this kind there.
-            throw NotesDriveError.decodingError(underlying: SyncEngineError.malformedEntry)
-        }
-    }
-
-    /// Folds the result of a successfully-drained queued operation back into local state.
-    /// Currently only `createFolder` needs this (swap the local placeholder ID for the
-    /// server-assigned one); other kinds already reflect their intended end state from their
-    /// synchronous optimistic update, so this just opportunistically refreshes `modifiedAt`.
-    func reconcile(entry: SyncQueueEntry, outcome: SyncOperationOutcome) {
-        if entry.kind == .createFolder, let placeholderID = entry.placeholderID, let created = outcome.createdItem,
-           let idx = allItems.firstIndex(where: { $0.id == placeholderID }) {
-            allItems[idx] = created
-        }
-        if let itemID = entry.itemID, let modifiedAt = outcome.updatedModifiedAt,
-           let idx = allItems.firstIndex(where: { $0.id == itemID }) {
             allItems[idx].modifiedAt = modifiedAt
         }
     }

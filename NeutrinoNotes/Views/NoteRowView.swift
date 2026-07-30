@@ -5,9 +5,23 @@ import SwiftUI
 /// A list row representing a single NoteItem, showing its icon, name, size, and date.
 struct NoteRowView: View {
 
+    // MARK: - OfflineBadge
+
+    /// Epic 9: the offline-availability state to show for this row, if any. Kept as a plain
+    /// value type (rather than an `OfflineStore` environment dependency) so this view stays
+    /// decoupled from the offline service and every existing call site/preview keeps working
+    /// unchanged.
+    enum OfflineBadge {
+        case downloading
+        case available
+        case unsyncedChanges
+    }
+
     // MARK: - Parameters
 
     let item: NoteItem
+    /// Defaults to `nil` (no badge) so existing call sites and previews are unaffected.
+    var offlineBadge: OfflineBadge? = nil
 
     // MARK: - Body
 
@@ -76,12 +90,34 @@ struct NoteRowView: View {
                     .foregroundStyle(.secondary)
                     .accessibilityLabel("In Trash")
             }
+            offlineBadgeView
             if item.type == .folder {
                 Image(systemName: "chevron.right")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
                     .accessibilityHidden(true)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var offlineBadgeView: some View {
+        switch offlineBadge {
+        case .downloading:
+            ProgressView()
+                .controlSize(.mini)
+        case .available:
+            Image(systemName: "arrow.down.circle.fill")
+                .font(.caption)
+                .foregroundStyle(.blue)
+                .accessibilityLabel("Available Offline")
+        case .unsyncedChanges:
+            Image(systemName: "exclamationmark.arrow.triangle.2.circlepath")
+                .font(.caption)
+                .foregroundStyle(.orange)
+                .accessibilityLabel("Unsynced Changes")
+        case nil:
+            EmptyView()
         }
     }
 
@@ -96,6 +132,12 @@ struct NoteRowView: View {
         }
         components.append("Modified \(formattedDate(item.modifiedAt))")
         if item.isTrashed { components.append("In Trash") }
+        switch offlineBadge {
+        case .downloading: components.append("Downloading for offline use")
+        case .available: components.append("Available Offline")
+        case .unsyncedChanges: components.append("Has unsynced changes")
+        case nil: break
+        }
         return components.joined(separator: ", ")
     }
 
@@ -139,5 +181,31 @@ struct NoteRowView: View {
             isTrashed: false,
             mimeType: nil
         ))
+        NoteRowView(
+            item: NoteItem(
+                id: "3",
+                name: "Downloaded Note.md",
+                type: .file,
+                parentID: nil,
+                size: 2048,
+                modifiedAt: Date().addingTimeInterval(-7200),
+                isTrashed: false,
+                mimeType: NoteItem.markdownMIME
+            ),
+            offlineBadge: .available
+        )
+        NoteRowView(
+            item: NoteItem(
+                id: "4",
+                name: "Edited Offline.md",
+                type: .file,
+                parentID: nil,
+                size: 1024,
+                modifiedAt: Date().addingTimeInterval(-120),
+                isTrashed: false,
+                mimeType: NoteItem.markdownMIME
+            ),
+            offlineBadge: .unsyncedChanges
+        )
     }
 }

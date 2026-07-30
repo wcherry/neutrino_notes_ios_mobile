@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct ContentView: View {
+    @EnvironmentObject var offlineStore: OfflineStore
     @State private var selectedTab = 0
 
     var body: some View {
@@ -33,6 +34,7 @@ struct ContentView: View {
             .tabItem {
                 Label("Offline", systemImage: "arrow.down.circle")
             }
+            .badge(offlineTabBadgeCount)
             .tag(3)
 
             NavigationStack {
@@ -44,6 +46,14 @@ struct ContentView: View {
             .tag(4)
         }
     }
+
+    // MARK: - Offline Badge
+
+    /// The number shown on the Offline tab — the count of notes with unsynced local edits.
+    /// `.badge(0)` hides the badge, so this is a no-op when the flag is off or nothing is pending.
+    private var offlineTabBadgeCount: Int {
+        FeatureFlags.offlineEditing ? offlineStore.pendingCount : 0
+    }
 }
 
 #Preview {
@@ -51,5 +61,7 @@ struct ContentView: View {
         .environmentObject(AuthService())
         .environmentObject(NotesDriveService())
         .environmentObject(NoteContentService())
-        .environmentObject(SyncEngine())
+        .environmentObject(NetworkMonitor())
+        .environmentObject(OfflineStore())
+        .environmentObject(SyncEngine(store: OfflineStore(), monitor: NetworkMonitor(), content: NoteContentService()))
 }

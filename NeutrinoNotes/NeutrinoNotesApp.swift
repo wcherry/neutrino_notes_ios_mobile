@@ -2,16 +2,26 @@ import SwiftUI
 
 @main
 struct NeutrinoNotesApp: App {
-    @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-
     @StateObject private var authService = AuthService()
     @StateObject private var notesDriveService = NotesDriveService()
-    @StateObject private var noteContentService = NoteContentService()
-    // SyncEngine.shared (not a fresh instance) so the environment object here and
-    // AppDelegate's background BGProcessingTask handler observe/drive the exact same engine.
-    @StateObject private var syncEngine = SyncEngine.shared
+    @StateObject private var noteContentService: NoteContentService
+    @StateObject private var networkMonitor: NetworkMonitor
+    @StateObject private var offlineStore: OfflineStore
+    @StateObject private var syncEngine: SyncEngine
 
     @Environment(\.scenePhase) private var scenePhase
+
+    init() {
+        let noteContentService = NoteContentService()
+        let networkMonitor = NetworkMonitor()
+        let offlineStore = OfflineStore()
+        _noteContentService = StateObject(wrappedValue: noteContentService)
+        _networkMonitor = StateObject(wrappedValue: networkMonitor)
+        _offlineStore = StateObject(wrappedValue: offlineStore)
+        _syncEngine = StateObject(wrappedValue: SyncEngine(
+            store: offlineStore, monitor: networkMonitor, content: noteContentService
+        ))
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -19,47 +29,21 @@ struct NeutrinoNotesApp: App {
                 .environmentObject(authService)
                 .environmentObject(notesDriveService)
                 .environmentObject(noteContentService)
+                .environmentObject(networkMonitor)
+                .environmentObject(offlineStore)
                 .environmentObject(syncEngine)
                 .task {
                     notesDriveService.authService = authService
                     noteContentService.authService = authService
-                    notesDriveService.syncEngine = syncEngine
-                    noteContentService.syncEngine = syncEngine
-                    syncEngine.authService = authService
-                    syncEngine.notesDriveService = notesDriveService
-                    syncEngine.noteContentService = noteContentService
-
-                    await runForegroundSync()
-
-                    // Lightweight periodic in-app retry sweep while foregrounded — gated behind
-                    // the feature flag; enqueueing mutations is never gated, only this extra
-                    // sweep cadence is.
-                    guard FeatureFlags.syncEngine else { return }
-                    while !Task.isCancelled {
-                        try? await Task.sleep(nanoseconds: 120_000_000_000) // 2 minutes
-                        guard !Task.isCancelled else { break }
-                        await runForegroundSync()
-                    }
+                    offlineStore.noteContentService = noteContentService
+                    syncEngine.start()
                 }
         }
         .onChange(of: scenePhase) { newPhase in
-            switch newPhase {
-            case .active:
-                Task { await runForegroundSync() }
-            case .background:
-                AppDelegate.scheduleNext()
-            default:
-                break
+            if newPhase == .active {
+                syncEngine.requestSync()
             }
         }
-    }
-
-    /// Runs the shared sync routine and, on completion, makes sure a background attempt is
-    /// scheduled too — so there's always a next background sync queued regardless of whether
-    /// the user backgrounds the app immediately afterward.
-    private func runForegroundSync() async {
-        await syncEngine.runSync()
-        AppDelegate.scheduleNext()
     }
 }
 

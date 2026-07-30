@@ -3,16 +3,11 @@ import Foundation
 // MARK: - NoteItem
 
 /// Model for a single folder or Markdown file within the user's notes in Neutrino Drive.
-///
-/// `Codable` conformance (additive, auto-synthesized — every stored property is already
-/// Codable-compatible) was added for Epic 8 (Sync Engine): `SyncQueueEntry` persists
-/// `NoteItem`/`[NoteItem]` snapshots to disk as the revert/restore payload for queued
-/// trash/restore/permanentDelete/emptyTrash operations.
-struct NoteItem: Identifiable, Hashable, Codable {
+struct NoteItem: Identifiable, Hashable {
 
     // MARK: - ItemType
 
-    enum ItemType: Codable {
+    enum ItemType {
         case folder
         case file
     }

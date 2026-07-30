@@ -262,14 +262,14 @@ Edits made on the phone appear on the web version automatically.
 
 ⸻
 
-⬜ Epic 9 — Offline Editing
+✅ Epic 9 — Offline Editing
 
 Features
 
-* ⬜ Download notes
-* ⬜ Edit offline
-* ⬜ Queue changes
-* ⬜ Sync when online
+* ✅ Download notes
+* ✅ Edit offline
+* ✅ Queue changes
+* ✅ Sync when online
 
 Milestone
 

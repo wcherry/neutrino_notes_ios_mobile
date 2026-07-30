@@ -52,10 +52,6 @@ targets:
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
         LSSupportsOpeningDocumentsInPlace: false
-        UIBackgroundModes:
-          - processing
-        BGTaskSchedulerPermittedIdentifiers:
-          - com.neutrino.notes.sync
         CFBundleDocumentTypes:
           - CFBundleTypeName: Neutrino Notes Key File
             CFBundleTypeRole: Viewer
@@ -70,19 +66,6 @@ targets:
             UTTypeTagSpecification:
               public.filename-extension:
                 - json
-    postbuildScripts:
-      - name: "Debug: Enable File Sharing (Simulator only)"
-        basedOnDependencyAnalysis: false
-        script: |
-          # Exposes the app's own Documents/ folder under Files > On My iPhone, so a
-          # key file copied in via `simcp` is visible to the in-app document picker.
-          # Simulator-only and Debug-only — never touches Release/TestFlight builds.
-          if [ "$CONFIGURATION" = "Debug" ] && [ "$PLATFORM_NAME" = "iphonesimulator" ]; then
-            PLIST="$CODESIGNING_FOLDER_PATH/Info.plist"
-            /usr/libexec/PlistBuddy -c "Add :UIFileSharingEnabled bool true" "$PLIST" 2>/dev/null \
-              || /usr/libexec/PlistBuddy -c "Set :UIFileSharingEnabled true" "$PLIST"
-            /usr/libexec/PlistBuddy -c "Set :LSSupportsOpeningDocumentsInPlace true" "$PLIST"
-          fi
 
   NeutrinoNotesTests:
     type: bundle.unit-test

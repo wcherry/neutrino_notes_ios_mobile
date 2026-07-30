@@ -44,14 +44,6 @@
 	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>Neutrino Notes needs camera access to scan QR codes for key import.</string>
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>processing</string>
-	</array>
-	<key>BGTaskSchedulerPermittedIdentifiers</key>
-	<array>
-		<string>com.neutrino.notes.sync</string>
-	</array>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>
