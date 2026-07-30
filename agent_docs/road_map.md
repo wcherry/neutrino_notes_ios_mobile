@@ -206,21 +206,21 @@ A reliable editor that supports large Markdown documents.
 
 ⸻
 
-⬜ Epic 6 — Markdown Rendering
+✅ Epic 6 — Markdown Rendering
 
 Support
 
-* ⬜ Headers
-* ⬜ Lists
-* ⬜ Checklists
-* ⬜ Tables
-* ⬜ Images
-* ⬜ Code blocks
-* ⬜ Quotes
-* ⬜ Links
-* ⬜ Horizontal rules
-* ⬜ Footnotes
-* ⬜ Task lists
+* ✅ Headers
+* ✅ Lists
+* ✅ Checklists
+* ✅ Tables
+* ✅ Images
+* ✅ Code blocks
+* ✅ Quotes
+* ✅ Links
+* ✅ Horizontal rules
+* ✅ Footnotes
+* ✅ Task lists
 
 Milestone
 
