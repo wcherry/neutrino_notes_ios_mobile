@@ -38,6 +38,26 @@ final class NoteTagTests: XCTestCase {
         XCTAssertEqual(tags.map(\.name), ["Alpha", "Beta"])
     }
 
+    // MARK: - File Count
+
+    func test_decode_readsTheServersFileCount() throws {
+        let json = #"{"id":"tag-1","name":"Work","createdAt":"2026-07-30T14:25:36","fileCount":7}"#
+
+        let tag = try NoteTag.decoder.decode(NoteTag.self, from: Data(json.utf8))
+
+        XCTAssertEqual(tag.fileCount, 7)
+    }
+
+    /// Drive added `fileCount` after this app first shipped tags, so a server without it must
+    /// still yield a usable tag rather than failing the whole list.
+    func test_decode_withoutFileCount_defaultsToZero() throws {
+        let json = #"{"id":"tag-1","name":"Work","createdAt":"2026-07-30T14:25:36"}"#
+
+        let tag = try NoteTag.decoder.decode(NoteTag.self, from: Data(json.utf8))
+
+        XCTAssertEqual(tag.fileCount, 0)
+    }
+
     func test_decode_unparseableDate_throws() {
         let json = #"{"id":"tag-3","name":"Broken","createdAt":"yesterday"}"#
 

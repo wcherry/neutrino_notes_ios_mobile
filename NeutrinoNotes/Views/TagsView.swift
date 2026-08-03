@@ -95,7 +95,19 @@ struct TagsView: View {
         List {
             ForEach(tagsService.tags) { tag in
                 NavigationLink(value: tag) {
-                    Label(tag.name, systemImage: "tag")
+                    HStack {
+                        Label(tag.name, systemImage: "tag")
+                        Spacer()
+                        // The server counts every non-trashed *file* carrying the tag, so a tag
+                        // also used on a non-Markdown file in Drive counts higher than the notes
+                        // listed when it is tapped. Unused tags show nothing rather than a zero.
+                        if tag.fileCount > 0 {
+                            Text("\(tag.fileCount)")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .accessibilityLabel("\(tag.fileCount) files")
+                        }
+                    }
                 }
                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                     Button(role: .destructive) {

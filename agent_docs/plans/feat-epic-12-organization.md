@@ -155,3 +155,47 @@ confirm a pinned note stays top of its folder and that the pin does *not* appear
 device; confirm Recents reflects an edit made in the web app; create a tag, assign it to two notes,
 filter by it, rename it, delete it; confirm starring a note with an unsynced offline edit does not
 raise a conflict.
+
+## 5. Follow-up: aligning tags with Drive's tag API (2026-07-30)
+
+Epic 12 built the tag UI against the backend as it stood in April. The web client has since
+shipped its own Drive tags feature (`neutrino/agent_docs/plans/feature-drive-tags.md`), and fixing
+the gaps it found changed the API this app consumes. §1's table entry "no UI at all" and §1.2's
+"any future web UI" are therefore stale: the web tag UI exists, and iOS-created tags show up in it.
+
+What changed here, and why:
+
+- **`NoteTag.fileCount`.** `TagResponse` now carries the number of non-trashed files carrying the
+  tag. `TagsView` shows it beside each tag; an unused tag shows nothing rather than a zero. Decoded
+  with `decodeIfPresent`, so a server predating the field yields 0 instead of failing the list.
+  Attaching or detaching a tag adjusts the cached count rather than refetching every tag.
+- **`notes(withTag:)` pages.** `GET /drive/tags/{id}/files` gained `limit`/`offset` and now
+  defaults to 50 — a single request silently truncated any tag used on more than 50 files. The
+  service walks pages of 200 (the server's cap) against the response's `total`.
+- **Tagged files carry the full file shape.** `TaggedFileResponse` was widened to mirror the
+  filesystem listing, so `isStarred` is decoded and a note reached through a tag renders with the
+  same star as it does in the browser. It stays optional in the client for the older-server case.
+- **Per-tag writes instead of replace-all.** The picker used `PUT /files/{id}/tags`, which replaces
+  a file's tags wholesale — a tag attached from another device between opening the sheet and saving
+  was silently dropped, and one rejected tag id failed the entire write. `applyTags` now diffs the
+  selection against the file's cached tags and issues idempotent
+  `POST`/`DELETE /files/{id}/tags/{tag_id}` per change, attempting all of them and rethrowing the
+  first failure. This is the same reasoning the web picker documents.
+- **The picker searches.** Its search field filters the loaded tag list client-side (no request per
+  keystroke) and doubles as the create field: a name matching no tag offers "Create «name»", which
+  replaces the separate "New Tag" section. Matching for the create offer is case-insensitive
+  because the server rejects a duplicate whatever its case.
+- **The editor shows a note's tags.** A chip row above the text, rendered only when the note has
+  tags, is the iOS counterpart of the web's info-panel tag section — before this, a note's tags
+  were invisible without opening the picker. Tapping a chip opens the picker. Loading them is
+  silent on failure: tags are decoration next to the note's text.
+
+Still not done, and still blocked for the same reason as §2.4: tag chips on browser rows need
+`tags` on the file list DTOs (`get_tag_names_for_files` is written on the backend but unwired).
+Tag colors and `tag:` search tokens remain Phase 3 on the web plan; the latter belongs with
+Epic 11.
+
+Tests added: `TagPickerSheetTests` (filtering and create-offer rules), `NoteTagTests` (`fileCount`
+present and absent), `TagsServiceTests` (`tagDiff` in both directions, a failed `applyTags` leaving
+the cache honest, tagged-file decoding with and without the star flag), and an `OrganizationViewTests`
+hosting test for `NoteEditorView`, which now needs `TagsService` in its environment. 317 tests pass.

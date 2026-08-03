@@ -65,6 +65,10 @@ final class TagsService: ObservableObject {
 
     // MARK: - Private
 
+    /// The server clamps `limit` to 200 and defaults to 50, so ask for the largest page it will
+    /// give and let `notes(withTag:)` walk the rest.
+    private static let taggedFilesPageSize = 200
+
     private static let decoder = NoteTag.decoder
 
     private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "NeutrinoNotes",
@@ -171,28 +175,96 @@ final class TagsService: ObservableObject {
         return sorted
     }
 
-    /// Replaces a file's tags wholesale — the same shape as the server's `PUT`, so a picker can
-    /// send one request no matter how many tags were added or removed.
-    func setTags(_ tagIDs: [String], for fileID: String) async throws {
-        logger.debug("setTags: file=\(fileID, privacy: .public) count=\(tagIDs.count)")
-        let updated: [NoteTag] = try await put("/api/v1/drive/files/\(fileID)/tags",
-                                               body: APISetFileTagsRequest(tagIds: tagIDs))
-        tagsByFileID[fileID] = updated.sorted(by: NoteTag.byName)
+    /// Attaches a tag to a file. The server's insert is idempotent, so re-adding an attached tag
+    /// is a no-op rather than an error.
+    func addTag(_ tag: NoteTag, to fileID: String) async throws {
+        logger.debug("addTag: tag=\(tag.id, privacy: .public) file=\(fileID, privacy: .public)")
+        try await postWithoutResponse("/api/v1/drive/files/\(fileID)/tags/\(tag.id)")
+        var fileTags = tagsByFileID[fileID] ?? []
+        guard !fileTags.contains(where: { $0.id == tag.id }) else { return }
+        fileTags.append(tag)
+        tagsByFileID[fileID] = fileTags.sorted(by: NoteTag.byName)
+        adjustFileCount(ofTag: tag.id, by: 1)
+    }
+
+    /// Detaches a tag from a file. The tag itself is untouched — it stays on every other note and
+    /// in the tag list.
+    func removeTag(_ tag: NoteTag, from fileID: String) async throws {
+        logger.debug("removeTag: tag=\(tag.id, privacy: .public) file=\(fileID, privacy: .public)")
+        try await deleteRequest("/api/v1/drive/files/\(fileID)/tags/\(tag.id)")
+        guard let fileTags = tagsByFileID[fileID], fileTags.contains(where: { $0.id == tag.id }) else { return }
+        tagsByFileID[fileID] = fileTags.filter { $0.id != tag.id }
+        adjustFileCount(ofTag: tag.id, by: -1)
+    }
+
+    /// Writes a picker's selection back as the difference from what the file already carries.
+    ///
+    /// Deliberately not the server's replace-all `PUT`: per-tag writes are idempotent, so a tag
+    /// attached from another device between load and save survives instead of being wiped, and one
+    /// rejected tag costs only that tag rather than the whole selection. Every change is attempted
+    /// even if an earlier one fails; the first failure is rethrown once the rest are done, so the
+    /// caches match what the server actually accepted.
+    func applyTags(_ selectedIDs: Set<String>, to fileID: String) async throws {
+        let current = Set((tagsByFileID[fileID] ?? []).map(\.id))
+        let diff = Self.tagDiff(current: current, selected: selectedIDs)
+        logger.debug("applyTags: file=\(fileID, privacy: .public) +\(diff.added.count) -\(diff.removed.count)")
+
+        var firstError: Error?
+        for tag in diff.added.compactMap(tag(withID:)) {
+            do { try await addTag(tag, to: fileID) } catch { firstError = firstError ?? error }
+        }
+        for tag in diff.removed.compactMap(tag(withID:)) {
+            do { try await removeTag(tag, from: fileID) } catch { firstError = firstError ?? error }
+        }
+        if let firstError { throw firstError }
+    }
+
+    /// The add/remove work a selection implies. Pure and total, so the picker's save behaviour is
+    /// testable without a server.
+    static func tagDiff(current: Set<String>,
+                        selected: Set<String>) -> (added: [String], removed: [String]) {
+        (added: selected.subtracting(current).sorted(),
+         removed: current.subtracting(selected).sorted())
     }
 
     // MARK: - Notes by Tag
 
-    /// The notes carrying a tag. The endpoint returns every kind of file, so the response is
-    /// reduced to Markdown notes with the same predicate the folder listing uses.
+    /// The notes carrying a tag. `type=note` narrows the listing server-side, so a tag applied to
+    /// PDFs and images alike still pages through notes only.
+    ///
+    /// Paged: the server caps a page at 200 and defaults to 50, so a single request would silently
+    /// truncate a well-used tag. `total` counts every accessible note before pagination — the
+    /// `type` filter is applied before it — which is what ends the loop.
     func notes(withTag tagID: String) async throws -> [NoteItem] {
         logger.debug("notes(withTag:): tag=\(tagID, privacy: .public)")
-        let response: APIListTaggedFilesResponse = try await get("/api/v1/drive/tags/\(tagID)/files")
-        let notes = response.files.map { NoteItem(taggedFile: $0) }.filter(NoteItem.isVisibleInNotes)
-        logger.debug("notes(withTag:): \(notes.count) of \(response.files.count) tagged files are notes")
+        var files: [APITaggedFileResponse] = []
+        var offset = 0
+        while true {
+            let path = "/api/v1/drive/tags/\(tagID)/files?limit=\(Self.taggedFilesPageSize)&offset=\(offset)&type=note"
+            let page: APIListTaggedFilesResponse = try await get(path)
+            files.append(contentsOf: page.files)
+            offset += page.files.count
+            // The empty-page guard is what makes this terminate if `total` and the page ever
+            // disagree — a tag whose files change mid-listing, say.
+            if page.files.isEmpty || files.count >= page.total { break }
+        }
+        let notes = files.map { NoteItem(taggedFile: $0) }
+        logger.debug("notes(withTag:): \(notes.count) tagged notes")
         return notes
     }
 
     // MARK: - Private Helpers
+
+    private func tag(withID id: String) -> NoteTag? {
+        tags.first { $0.id == id }
+    }
+
+    /// Keeps a tag's file count honest between refreshes: attaching or detaching it on a note
+    /// changes the number the tag list shows, and re-fetching every tag for one toggle is wasteful.
+    private func adjustFileCount(ofTag tagID: String, by delta: Int) {
+        guard let idx = tags.firstIndex(where: { $0.id == tagID }) else { return }
+        tags[idx].fileCount = max(0, tags[idx].fileCount + delta)
+    }
 
     private func applyRename(tagID: String, to newName: String) {
         if let idx = tags.firstIndex(where: { $0.id == tagID }) {
@@ -244,8 +316,9 @@ final class TagsService: ObservableObject {
         try await perform(try request(method: "PATCH", path: path, body: body))
     }
 
-    private func put<T: Decodable>(_ path: String, body: some Encodable) async throws -> T {
-        try await perform(try request(method: "PUT", path: path, body: body))
+    /// The file-tag attach endpoint answers 204 — a POST with nothing to decode.
+    private func postWithoutResponse(_ path: String) async throws {
+        _ = try await execute(try await authorized(try request(method: "POST", path: path)))
     }
 
     private func deleteRequest(_ path: String) async throws {
@@ -302,9 +375,10 @@ final class TagsService: ObservableObject {
 
 // MARK: - NoteItem convenience initialiser
 
-private extension NoteItem {
-    /// `GET /drive/tags/{id}/files` returns a trimmed file summary — no star flag, so a note
-    /// reached through a tag shows no star until it is seen in a listing that carries one.
+extension NoteItem {
+    /// `GET /drive/tags/{id}/files` mirrors the filesystem listing field-for-field, star flag
+    /// included, so a note reached through a tag renders exactly as it does in the browser.
+    /// The endpoint excludes trashed files, hence the constant.
     init(taggedFile: APITaggedFileResponse) {
         self.init(
             id: taggedFile.id,
@@ -314,7 +388,8 @@ private extension NoteItem {
             size: taggedFile.sizeBytes,
             modifiedAt: taggedFile.updatedAt,
             isTrashed: false,
-            mimeType: taggedFile.mimeType
+            mimeType: taggedFile.mimeType,
+            isStarred: taggedFile.isStarred ?? false
         )
     }
 }
@@ -334,20 +409,21 @@ private struct APIUpdateTagRequest: Encodable {
     let name: String
 }
 
-private struct APISetFileTagsRequest: Encodable {
-    let tagIds: [String]
-}
-
-private struct APIListTaggedFilesResponse: Decodable {
+struct APIListTaggedFilesResponse: Decodable {
     let files: [APITaggedFileResponse]
+    /// Every accessible file carrying the tag, before pagination — what `notes(withTag:)` pages
+    /// against. The response also echoes `limit`/`offset`, which this client already knows.
     let total: Int
 }
 
-private struct APITaggedFileResponse: Decodable {
+struct APITaggedFileResponse: Decodable {
     let id: String
     let name: String
     let mimeType: String
     let sizeBytes: Int64
     let folderId: String?
+    /// Optional only to tolerate a server predating the field, which used to return a trimmed file
+    /// summary; a note then renders unstarred rather than the listing failing to decode.
+    let isStarred: Bool?
     let updatedAt: Date
 }
