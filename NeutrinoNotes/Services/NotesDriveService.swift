@@ -22,8 +22,9 @@ enum NotesDriveError: LocalizedError {
 // MARK: - NotesDriveService
 
 // Browses and organizes the Markdown documents stored in Neutrino Drive. Reuses the existing
-// Drive folder/file/trash APIs — the Notes app has no backend of its own — and filters every
-// response down to folders and Drive's note MIME type (see NoteItem.isVisibleInNotes).
+// Drive folder/file/trash APIs — the Notes app has no backend of its own. Every listing passes
+// `type=note`, so the server returns only Drive's note MIME type; folders come back unfiltered
+// because a folder may hold notes whatever else is in it.
 @MainActor
 final class NotesDriveService: ObservableObject {
 
@@ -33,6 +34,14 @@ final class NotesDriveService: ObservableObject {
     @Published private(set) var allItems: [NoteItem] = []
     /// Items from GET /api/v1/drive/trash, filtered to folders and Markdown files.
     @Published private(set) var trashItems: [NoteItem] = []
+    /// Epic 12: starred folders and notes from GET /api/v1/drive?view=starred, most recently
+    /// starred first (the server orders by `starred_at` descending).
+    @Published private(set) var starredItems: [NoteItem] = []
+    /// Epic 12: most recently modified notes from GET /api/v1/drive?view=recent.
+    @Published private(set) var recentItems: [NoteItem] = []
+    /// Epic 22: folders and notes other people have shared with this account, from
+    /// GET /api/v1/drive/shared-with-me. Every item here carries `isShared`.
+    @Published private(set) var sharedItems: [NoteItem] = []
 
     @Published var isLoading = false
     @Published var error: String?
@@ -41,10 +50,15 @@ final class NotesDriveService: ObservableObject {
 
     #if DEBUG
     /// Seed state for unit tests — bypasses the network entirely.
-    convenience init(myNotes: [NoteItem] = [], trash: [NoteItem] = []) {
+    convenience init(myNotes: [NoteItem] = [], trash: [NoteItem] = [],
+                     starred: [NoteItem] = [], recents: [NoteItem] = [],
+                     shared: [NoteItem] = []) {
         self.init()
         self.allItems = myNotes
         self.trashItems = trash
+        self.starredItems = starred
+        self.recentItems = recents
+        self.sharedItems = shared
     }
     #endif
 
@@ -68,6 +82,11 @@ final class NotesDriveService: ObservableObject {
     /// Set once at app launch by NeutrinoNotesApp so the service can refresh tokens before requests.
     weak var authService: AuthService?
 
+    /// Set once at app launch. Metadata-only writes (rename, star) bump the server's `updatedAt`
+    /// without changing a note's content, which SyncEngine would otherwise read as somebody else
+    /// having edited the note — see `OfflineStore.rebasePendingEdit`.
+    weak var offlineStore: OfflineStore?
+
     private var baseURL: String {
         UserDefaults.standard.string(forKey: AuthService.serverHostKey) ?? AuthService.defaultHost
     }
@@ -77,8 +96,23 @@ final class NotesDriveService: ObservableObject {
     func items(in section: NotesSection, parentID: String?) -> [NoteItem] {
         switch section {
         case .myNotes: return allItems.filter { $0.parentID == parentID }
+        // Flat by necessity: someone else's folder can't be listed, so `parentID` is meaningless
+        // here and every shared item sits at the top level (see loadSharedWithMe).
+        case .shared:  return sharedItems
+        // Tags browse tags, not items; TagsView owns that listing (see NotesSection.tags).
+        case .tags:    return []
         case .trash:   return trashItems
         }
+    }
+
+    /// Looks an item up wherever it currently lives. A note reached from Favorites, Recents or
+    /// Shared was never part of a folder listing, so `allItems` alone would not find it.
+    func item(id: String) -> NoteItem? {
+        allItems.first(where: { $0.id == id })
+            ?? starredItems.first(where: { $0.id == id })
+            ?? recentItems.first(where: { $0.id == id })
+            ?? sharedItems.first(where: { $0.id == id })
+            ?? trashItems.first(where: { $0.id == id })
     }
 
     // MARK: - Load
@@ -92,35 +126,36 @@ final class NotesDriveService: ObservableObject {
             case .myNotes:
                 let response: APIFolderContentsResponse
                 if let id = parentID {
-                    // /folders/{id} has no server-side type filter — rely on the client-side
-                    // isVisibleInNotes filter below.
-                    response = try await get("/api/v1/drive/folders/\(id)")
+                    response = try await get("/api/v1/drive/folders/\(id)?type=note")
                 } else {
-                    // Root listing supports filtering to a single MIME-mapped type server-side.
                     response = try await get("/api/v1/drive?type=note")
                 }
                 let folders = response.folders.map { NoteItem(folder: $0) }
-                let allFiles = response.files.map { NoteItem(file: $0) }
-                let files = allFiles.filter(NoteItem.isVisibleInNotes)
-                logger.debug("loadSection myNotes: API returned \(response.folders.count) folders, \(response.files.count) files: \(allFiles.map { "\($0.name) [\($0.mimeType ?? "nil")]" }.joined(separator: ", "), privacy: .public)")
-                if allFiles.count != files.count {
-                    let dropped = allFiles.filter { !NoteItem.isVisibleInNotes($0) }
-                    logger.debug("loadSection myNotes: filtered out \(dropped.count) non-Markdown file(s): \(dropped.map { "\($0.name) [\($0.mimeType ?? "nil")]" }.joined(separator: ", "), privacy: .public)")
-                }
+                let files = response.files.map { NoteItem(file: $0) }
+                logger.debug("loadSection myNotes: API returned \(response.folders.count) folders, \(response.files.count) notes: \(files.map { "\($0.name) [\($0.mimeType ?? "nil")]" }.joined(separator: ", "), privacy: .public)")
                 // Replace cached items for this parent to avoid stale duplicates.
                 allItems.removeAll { $0.parentID == parentID }
                 allItems.append(contentsOf: folders)
                 allItems.append(contentsOf: files)
                 logger.debug("loadSection myNotes: displaying \(folders.count) folders, \(files.count) Markdown files")
 
+            case .shared:
+                let response: APISharedWithMeResponse = try await get("/api/v1/drive/shared-with-me?type=note")
+                let folders = response.folders.map { NoteItem(sharedFolder: $0) }
+                let files = response.files.map { NoteItem(sharedFile: $0) }
+                sharedItems = folders + files
+                logger.debug("loadSection shared: \(folders.count) folders, \(files.count) notes")
+
+            case .tags:
+                // Nothing to fetch here — TagsService loads the tag list.
+                break
+
             case .trash:
-                let response: APITrashContentsResponse = try await get("/api/v1/drive/trash")
+                let response: APITrashContentsResponse = try await get("/api/v1/drive/trash?type=note")
                 let folders = response.folders.map { NoteItem(trashFolder: $0) }
-                let allFiles = response.files.map { NoteItem(trashFile: $0) }
-                let files = allFiles.filter(NoteItem.isVisibleInNotes)
-                logger.debug("loadSection trash: API returned \(response.folders.count) folders, \(response.files.count) files: \(allFiles.map { "\($0.name) [\($0.mimeType ?? "nil")]" }.joined(separator: ", "), privacy: .public)")
+                let files = response.files.map { NoteItem(trashFile: $0) }
                 trashItems = folders + files
-                logger.debug("loadSection trash: displaying \(folders.count) folders, \(files.count) Markdown files")
+                logger.debug("loadSection trash: \(folders.count) folders, \(files.count) notes")
             }
         } catch {
             logger.error("loadSection \(section.rawValue, privacy: .public) failed: \(error, privacy: .public)")
@@ -129,7 +164,102 @@ final class NotesDriveService: ObservableObject {
         isLoading = false
     }
 
+    // MARK: - Epic 12 Listings
+
+    /// Loads the Favorites listing: every starred folder and note, most recently starred first.
+    func loadStarred() async {
+        logger.debug("loadStarred")
+        isLoading = true
+        error = nil
+        do {
+            let response: APIFolderContentsResponse = try await get("/api/v1/drive?view=starred&type=note")
+            let folders = response.folders.map { NoteItem(folder: $0) }
+            let files = response.files.map { NoteItem(file: $0) }
+            starredItems = folders + files
+            logger.debug("loadStarred: \(folders.count) folders, \(files.count) notes")
+        } catch {
+            logger.error("loadStarred failed: \(error, privacy: .public)")
+            self.error = error.localizedDescription
+        }
+        isLoading = false
+    }
+
+    /// Loads the Recents listing: the most recently modified notes, newest first. Trashed items
+    /// and non-notes are excluded server-side, and `limit` counts notes rather than files of
+    /// every type. Folders are never part of this view — the server returns files only — so
+    /// Recents is a flat list of notes.
+    func loadRecents(limit: Int = 50) async {
+        logger.debug("loadRecents: limit=\(limit)")
+        isLoading = true
+        error = nil
+        do {
+            let response: APIFolderContentsResponse = try await get("/api/v1/drive?view=recent&type=note&limit=\(limit)")
+            recentItems = response.files.map { NoteItem(file: $0) }
+            logger.debug("loadRecents: \(self.recentItems.count) recent notes")
+        } catch {
+            logger.error("loadRecents failed: \(error, privacy: .public)")
+            self.error = error.localizedDescription
+        }
+        isLoading = false
+    }
+
     // MARK: - Mutations (fire-and-forget, optimistic)
+
+    /// Stars or unstars an item — the Favorites model, shared with the web app, which stores the
+    /// flag on the Drive file/folder itself rather than in a list of its own.
+    func setStarred(itemID: String, isStarred: Bool) {
+        guard var item = item(id: itemID) else { return }
+        let previousModifiedAt = item.modifiedAt
+        logger.debug("setStarred: id=\(itemID, privacy: .public) isStarred=\(isStarred)")
+        item.isStarred = isStarred
+        applyStarred(item)
+        Task {
+            do {
+                let updatedAt: Date
+                if item.type == .folder {
+                    let body = APIUpdateFolderRequest(name: nil, isStarred: isStarred)
+                    let folder: APIFolderResponse = try await patch("/api/v1/drive/folders/\(itemID)", body: body)
+                    updatedAt = folder.updatedAt
+                } else {
+                    let body = APIUpdateFileRequest(name: nil, isStarred: isStarred)
+                    let file: APIFileResponse = try await patch("/api/v1/drive/files/\(itemID)", body: body)
+                    updatedAt = file.updatedAt
+                }
+                // Starring touches `updated_at`; keep the offline cache's idea of the server
+                // version in step so a metadata bump isn't mistaken for a remote content edit.
+                offlineStore?.rebasePendingEdit(id: itemID,
+                                                previousModifiedAt: previousModifiedAt,
+                                                serverModifiedAt: updatedAt)
+                logger.debug("setStarred succeeded: id=\(itemID, privacy: .public)")
+            } catch {
+                logger.error("setStarred failed: id=\(itemID, privacy: .public) error=\(error, privacy: .public)")
+                item.isStarred = !isStarred
+                applyStarred(item)
+                self.error = error.localizedDescription
+            }
+        }
+    }
+
+    /// Writes an item's star flag through every collection that holds it, and adds it to (or drops
+    /// it from) the Favorites listing so that list stays correct without a refetch.
+    private func applyStarred(_ item: NoteItem) {
+        for idx in allItems.indices where allItems[idx].id == item.id {
+            allItems[idx].isStarred = item.isStarred
+        }
+        for idx in recentItems.indices where recentItems[idx].id == item.id {
+            recentItems[idx].isStarred = item.isStarred
+        }
+        if item.isStarred {
+            if let idx = starredItems.firstIndex(where: { $0.id == item.id }) {
+                starredItems[idx] = item
+            } else {
+                // Most recently starred first, matching the server's `starred_at DESC` ordering.
+                starredItems.insert(item, at: 0)
+            }
+        } else {
+            starredItems.removeAll { $0.id == item.id }
+        }
+    }
 
     func createFolder(name: String, parentID: String?) {
         logger.debug("createFolder: name=\(name, privacy: .public) parentID=\(parentID ?? "root", privacy: .public)")
@@ -160,18 +290,27 @@ final class NotesDriveService: ObservableObject {
         guard let idx = index(of: itemID) else { return }
         let old = allItems[idx].name
         let isFolder = allItems[idx].type == .folder
+        let previousModifiedAt = allItems[idx].modifiedAt
         logger.debug("rename: id=\(itemID, privacy: .public) from=\(old, privacy: .public) to=\(newName, privacy: .public)")
         allItems[idx].name = newName
         allItems[idx].modifiedAt = Date()
         Task {
             do {
+                let updatedAt: Date
                 if isFolder {
-                    let body = APIUpdateFolderRequest(name: newName)
-                    let _: APIFolderResponse = try await patch("/api/v1/drive/folders/\(itemID)", body: body)
+                    let body = APIUpdateFolderRequest(name: newName, isStarred: nil)
+                    let folder: APIFolderResponse = try await patch("/api/v1/drive/folders/\(itemID)", body: body)
+                    updatedAt = folder.updatedAt
                 } else {
-                    let body = APIUpdateFileRequest(name: newName)
-                    let _: APIFileResponse = try await patch("/api/v1/drive/files/\(itemID)", body: body)
+                    let body = APIUpdateFileRequest(name: newName, isStarred: nil)
+                    let file: APIFileResponse = try await patch("/api/v1/drive/files/\(itemID)", body: body)
+                    updatedAt = file.updatedAt
                 }
+                // A rename bumps `updated_at` without touching the note's content — same hazard
+                // for a pending offline edit as starring does. See setStarred.
+                offlineStore?.rebasePendingEdit(id: itemID,
+                                                previousModifiedAt: previousModifiedAt,
+                                                serverModifiedAt: updatedAt)
                 logger.debug("rename succeeded: id=\(itemID, privacy: .public)")
             } catch {
                 logger.error("rename failed: id=\(itemID, privacy: .public) error=\(error, privacy: .public)")
@@ -206,8 +345,12 @@ final class NotesDriveService: ObservableObject {
             trashItems.append(NoteItem(
                 id: item.id, name: item.name, type: item.type,
                 parentID: item.parentID, size: item.size, modifiedAt: Date(),
-                isTrashed: true, mimeType: item.mimeType
+                isTrashed: true, mimeType: item.mimeType, isStarred: item.isStarred
             ))
+            // Trashed items are excluded from both server-side views; drop them here too rather
+            // than leave a Favorites or Recents row that opens a deleted note.
+            starredItems.removeAll { $0.id == itemID }
+            recentItems.removeAll { $0.id == itemID }
             Task {
                 do {
                     if item.type == .folder {
@@ -222,6 +365,7 @@ final class NotesDriveService: ObservableObject {
                     logger.error("delete (trash) failed: id=\(itemID, privacy: .public) error=\(error, privacy: .public)")
                     trashItems.removeAll { $0.id == itemID }
                     allItems.append(item)
+                    if item.isStarred { applyStarred(item) }
                     self.error = error.localizedDescription
                 }
             }
@@ -256,6 +400,8 @@ final class NotesDriveService: ObservableObject {
         logger.debug("restore: id=\(itemID, privacy: .public) name=\(item.name, privacy: .public)")
         item.isTrashed = false
         allItems.append(item)
+        // A restored item keeps whatever star it had when it was trashed, so Favorites gets it back.
+        if item.isStarred { applyStarred(item) }
         Task {
             do {
                 if item.type == .folder {
@@ -267,6 +413,7 @@ final class NotesDriveService: ObservableObject {
             } catch {
                 logger.error("restore failed: id=\(itemID, privacy: .public) error=\(error, privacy: .public)")
                 allItems.removeAll { $0.id == itemID }
+                starredItems.removeAll { $0.id == itemID }
                 trashItems.append(item)
                 self.error = error.localizedDescription
             }
@@ -301,6 +448,16 @@ final class NotesDriveService: ObservableObject {
         if let idx = index(of: itemID) {
             allItems[idx].size = size
             allItems[idx].modifiedAt = modifiedAt
+        }
+        // Keep the Epic 12 listings honest about a note the user just edited — Recents is ordered
+        // by exactly this timestamp.
+        for idx in recentItems.indices where recentItems[idx].id == itemID {
+            recentItems[idx].size = size
+            recentItems[idx].modifiedAt = modifiedAt
+        }
+        for idx in starredItems.indices where starredItems[idx].id == itemID {
+            starredItems[idx].size = size
+            starredItems[idx].modifiedAt = modifiedAt
         }
     }
 
@@ -448,7 +605,8 @@ private extension NoteItem {
             size: nil,
             modifiedAt: folder.updatedAt,
             isTrashed: false,
-            mimeType: nil
+            mimeType: nil,
+            isStarred: folder.isStarred
         )
     }
 
@@ -461,7 +619,48 @@ private extension NoteItem {
             size: file.sizeBytes,
             modifiedAt: file.updatedAt,
             isTrashed: false,
-            mimeType: file.mimeType
+            mimeType: file.mimeType,
+            isStarred: file.isStarred
+        )
+    }
+
+    /// A folder somebody else owns. `parentID` is deliberately dropped: it names a folder in the
+    /// owner's drive, which this account cannot list, and leaving it in would make the item look
+    /// like a child of a folder that isn't there.
+    ///
+    /// The star flag is dropped too. `is_starred` is a single column on the row, so it is the
+    /// *owner's* star; showing it here would put a Favorites badge on somebody else's note that
+    /// this account never set and cannot clear (the PATCH is owner-scoped).
+    init(sharedFolder: APIFolderResponse) {
+        self.init(
+            id: sharedFolder.id,
+            name: sharedFolder.name,
+            type: .folder,
+            parentID: nil,
+            size: nil,
+            modifiedAt: sharedFolder.updatedAt,
+            isTrashed: false,
+            mimeType: nil,
+            isStarred: false,
+            isShared: true
+        )
+    }
+
+    /// A note somebody else owns. `parentID` is kept — it is the owner's folder id, which this
+    /// account can't list but which `/files/{id}/info` and the content endpoints don't need.
+    /// The star flag is dropped for the same reason as `init(sharedFolder:)`.
+    init(sharedFile: APIFileResponse) {
+        self.init(
+            id: sharedFile.id,
+            name: sharedFile.name,
+            type: .file,
+            parentID: sharedFile.folderId,
+            size: sharedFile.sizeBytes,
+            modifiedAt: sharedFile.updatedAt,
+            isTrashed: false,
+            mimeType: sharedFile.mimeType,
+            isStarred: false,
+            isShared: true
         )
     }
 
@@ -504,6 +703,7 @@ private struct APIFolderResponse: Decodable {
     let name: String
     let parentId: String?
     let updatedAt: Date
+    let isStarred: Bool
 }
 
 private struct APIFileResponse: Decodable {
@@ -513,6 +713,14 @@ private struct APIFileResponse: Decodable {
     let sizeBytes: Int64
     let mimeType: String
     let updatedAt: Date
+    let isStarred: Bool
+}
+
+/// `GET /api/v1/drive/shared-with-me` — the same file and folder shapes as a folder listing, but
+/// flat and owned by other people.
+private struct APISharedWithMeResponse: Decodable {
+    let files: [APIFileResponse]
+    let folders: [APIFolderResponse]
 }
 
 private struct APITrashContentsResponse: Decodable {
@@ -541,10 +749,12 @@ private struct APICreateFolderRequest: Encodable {
 
 private struct APIUpdateFolderRequest: Encodable {
     let name: String?
+    let isStarred: Bool?
 }
 
 private struct APIUpdateFileRequest: Encodable {
     let name: String?
+    let isStarred: Bool?
 }
 
 private struct APIBulkTrashRequest: Encodable {

@@ -49,7 +49,7 @@ final class AuthService: ObservableObject {
     // MARK: - OAuth Configuration
 
     static let serverHostKey = "nn.server_host"
-    static let defaultHost   = "http://localhost:8080"
+    static let defaultHost   = "https://www.getneutrino.app"
 
     private enum AuthConfig {
         static var baseURL: String {

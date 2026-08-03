@@ -476,4 +476,88 @@ final class OfflineStoreTests: XCTestCase {
 
         XCTAssertEqual(store.totalBytesOnDisk, 0)
     }
+
+    // MARK: - rebasePendingEdit (Epic 12)
+
+    /// Renaming or starring a note bumps the server's `updated_at` without changing its content.
+    /// Left alone, SyncEngine would read that bump as somebody else's edit and raise a conflict
+    /// over the user's own text.
+    func test_rebasePendingEdit_movesTheEditsBaseOntoTheMetadataWritesTimestamp() throws {
+        storeRealKeyPair()
+        let originalServerDate = Date(timeIntervalSince1970: 1_700_000_000)
+        let (note, dek) = try seedNote(text: "body", serverModifiedAt: originalServerDate)
+        try writeIndex([note])
+        let store = makeStore()
+        try store.writePendingEdit("edited while offline", id: note.id, dek: dek)
+
+        let afterMetadataWrite = Date(timeIntervalSince1970: 1_700_000_500)
+        store.rebasePendingEdit(id: note.id,
+                                previousModifiedAt: originalServerDate,
+                                serverModifiedAt: afterMetadataWrite)
+
+        let updated = try XCTUnwrap(store.note(id: note.id))
+        XCTAssertEqual(updated.serverModifiedAt, afterMetadataWrite)
+        XCTAssertEqual(updated.pendingEdit?.baseServerModifiedAt, afterMetadataWrite)
+    }
+
+    func test_rebasePendingEdit_withoutAPendingEdit_stillRecordsTheNewServerVersion() throws {
+        storeRealKeyPair()
+        let originalServerDate = Date(timeIntervalSince1970: 1_700_000_000)
+        let (note, _) = try seedNote(text: "body", serverModifiedAt: originalServerDate)
+        try writeIndex([note])
+        let store = makeStore()
+
+        let afterMetadataWrite = Date(timeIntervalSince1970: 1_700_000_500)
+        store.rebasePendingEdit(id: note.id,
+                                previousModifiedAt: originalServerDate,
+                                serverModifiedAt: afterMetadataWrite)
+
+        let updated = try XCTUnwrap(store.note(id: note.id))
+        XCTAssertEqual(updated.serverModifiedAt, afterMetadataWrite)
+        XCTAssertNil(updated.pendingEdit)
+    }
+
+    /// A genuine remote content edit must still conflict: if the cache already knows about a
+    /// version at or beyond the one the metadata write was based on, the rebase is skipped.
+    func test_rebasePendingEdit_isSkippedWhenTheCacheAlreadyKnowsSomethingNewer() throws {
+        storeRealKeyPair()
+        let cachedServerDate = Date(timeIntervalSince1970: 1_700_000_900)
+        let (note, dek) = try seedNote(text: "body", serverModifiedAt: cachedServerDate)
+        try writeIndex([note])
+        let store = makeStore()
+        try store.writePendingEdit("edited while offline", id: note.id, dek: dek)
+
+        // The metadata write was made against a version older than the one the cache holds.
+        store.rebasePendingEdit(id: note.id,
+                                previousModifiedAt: Date(timeIntervalSince1970: 1_700_000_000),
+                                serverModifiedAt: Date(timeIntervalSince1970: 1_700_000_950))
+
+        let updated = try XCTUnwrap(store.note(id: note.id))
+        XCTAssertEqual(updated.serverModifiedAt, cachedServerDate)
+        XCTAssertEqual(updated.pendingEdit?.baseServerModifiedAt, cachedServerDate)
+    }
+
+    func test_rebasePendingEdit_withAnOlderTimestamp_doesNothing() throws {
+        storeRealKeyPair()
+        let cachedServerDate = Date(timeIntervalSince1970: 1_700_000_000)
+        let (note, _) = try seedNote(text: "body", serverModifiedAt: cachedServerDate)
+        try writeIndex([note])
+        let store = makeStore()
+
+        store.rebasePendingEdit(id: note.id,
+                                previousModifiedAt: cachedServerDate,
+                                serverModifiedAt: Date(timeIntervalSince1970: 1_699_000_000))
+
+        XCTAssertEqual(store.note(id: note.id)?.serverModifiedAt, cachedServerDate)
+    }
+
+    func test_rebasePendingEdit_unknownID_isANoOp() {
+        let store = makeStore()
+
+        store.rebasePendingEdit(id: "not-cached",
+                                previousModifiedAt: Date(timeIntervalSince1970: 1),
+                                serverModifiedAt: Date(timeIntervalSince1970: 2))
+
+        XCTAssertTrue(store.notes.isEmpty)
+    }
 }

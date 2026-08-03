@@ -22,6 +22,12 @@ struct NoteRowView: View {
     let item: NoteItem
     /// Defaults to `nil` (no badge) so existing call sites and previews are unaffected.
     var offlineBadge: OfflineBadge? = nil
+    /// Epic 12: whether this item is pinned on *this device*. Passed in rather than read from
+    /// `PinStore` so the row stays a plain value-driven view, as with `offlineBadge`.
+    var isPinned: Bool = false
+    /// Epic 22: folders shared *with* this account can't be opened — Drive's folder listings are
+    /// owner-scoped — so their rows drop the chevron rather than promise a screen that 404s.
+    var showsDisclosure: Bool = true
 
     // MARK: - Body
 
@@ -90,8 +96,26 @@ struct NoteRowView: View {
                     .foregroundStyle(.secondary)
                     .accessibilityLabel("In Trash")
             }
+            if isPinned {
+                Image(systemName: "pin.fill")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Pinned")
+            }
+            if item.isStarred {
+                Image(systemName: "star.fill")
+                    .font(.caption)
+                    .foregroundStyle(.yellow)
+                    .accessibilityLabel("Favorite")
+            }
+            if item.isShared {
+                Image(systemName: "person.2.fill")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Shared with you")
+            }
             offlineBadgeView
-            if item.type == .folder {
+            if item.type == .folder && showsDisclosure {
                 Image(systemName: "chevron.right")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
@@ -132,6 +156,9 @@ struct NoteRowView: View {
         }
         components.append("Modified \(formattedDate(item.modifiedAt))")
         if item.isTrashed { components.append("In Trash") }
+        if isPinned { components.append("Pinned on this device") }
+        if item.isStarred { components.append("Favorite") }
+        if item.isShared { components.append("Shared with you") }
         switch offlineBadge {
         case .downloading: components.append("Downloading for offline use")
         case .available: components.append("Available Offline")
@@ -206,6 +233,20 @@ struct NoteRowView: View {
                 mimeType: NoteItem.markdownMIME
             ),
             offlineBadge: .unsyncedChanges
+        )
+        NoteRowView(
+            item: NoteItem(
+                id: "5",
+                name: "Pinned Favorite.md",
+                type: .file,
+                parentID: nil,
+                size: 3072,
+                modifiedAt: Date().addingTimeInterval(-600),
+                isTrashed: false,
+                mimeType: NoteItem.markdownMIME,
+                isStarred: true
+            ),
+            isPinned: true
         )
     }
 }

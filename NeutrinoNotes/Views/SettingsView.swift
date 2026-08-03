@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject var authService: AuthService
+    @EnvironmentObject var appLock: AppLockService
 
     @State private var hasKeys = KeyImportService.hasStoredKeys()
     @State private var showKeyImport = false
@@ -54,6 +55,10 @@ struct SettingsView: View {
                 }
             }
 
+            if FeatureFlags.appLock {
+                appLockSection
+            }
+
             Section {
                 Button(role: .destructive) {
                     authService.logout()
@@ -67,11 +72,62 @@ struct SettingsView: View {
         }
         .navigationTitle("Settings")
     }
+
+    // MARK: - App Lock
+
+    /// Phase 8 app lock. The toggle has no local state on purpose: `appLock.isEnabled` only flips
+    /// after the owner check passes, so a cancelled Face ID prompt springs the switch back on its
+    /// own rather than needing to be reverted by hand.
+    @ViewBuilder
+    private var appLockSection: some View {
+        Section {
+            if appLock.isAvailable {
+                Toggle(isOn: Binding(
+                    get: { appLock.isEnabled },
+                    set: { newValue in Task { await appLock.setEnabled(newValue) } }
+                )) {
+                    Label("Require \(appLock.biometry.label)", systemImage: appLock.biometry.iconName)
+                }
+                .disabled(appLock.isAuthenticating)
+
+                if appLock.isEnabled {
+                    Picker("Lock After", selection: Binding(
+                        get: { appLock.timeout },
+                        set: { appLock.setTimeout($0) }
+                    )) {
+                        ForEach(AppLockTimeout.allCases) { option in
+                            Text(option.label).tag(option)
+                        }
+                    }
+
+                    Button {
+                        appLock.lockNow()
+                    } label: {
+                        Label("Lock Now", systemImage: "lock.fill")
+                    }
+                }
+            } else {
+                Label("Set a device passcode to use app lock", systemImage: "exclamationmark.lock")
+                    .foregroundStyle(.secondary)
+            }
+
+            if let message = appLock.lastError?.message {
+                Text(message)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+            }
+        } header: {
+            Text("App Lock")
+        } footer: {
+            Text("Your notes are always encrypted. App lock adds \(appLock.biometry.label) in front of the app itself, so an unlocked phone still can't be handed over open.")
+        }
+    }
 }
 
 #Preview {
     NavigationStack {
         SettingsView()
             .environmentObject(AuthService())
+            .environmentObject(AppLockService())
     }
 }

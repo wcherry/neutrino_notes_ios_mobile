@@ -65,4 +65,8 @@ struct ContentView: View {
         .environmentObject(OfflineStore())
         .environmentObject(SyncEngine(store: OfflineStore(), monitor: NetworkMonitor(), content: NoteContentService()))
         .environmentObject(VersionHistoryService())
+        .environmentObject(TagsService())
+        .environmentObject(PinStore())
+        .environmentObject(SharingService())
+        .environmentObject(AppLockService())
 }

@@ -19,6 +19,7 @@ struct NoteBrowserView: View {
     @EnvironmentObject var notesDriveService: NotesDriveService
     @EnvironmentObject var noteContentService: NoteContentService
     @EnvironmentObject var offlineStore: OfflineStore
+    @EnvironmentObject var pinStore: PinStore
 
     // MARK: - State
 
@@ -32,11 +33,20 @@ struct NoteBrowserView: View {
     /// progress indicator instead of the static "available offline" badge.
     @State private var downloadingItemID: String?
     @State private var offlineActionError: String?
+    /// Epic 12: the note whose tags are being edited.
+    @State private var itemToTag: NoteItem?
+    /// Epic 22: the item whose sharing is being managed.
+    @State private var itemToShare: NoteItem?
 
     // MARK: - Computed
 
+    /// Pinned items float to the top of My Notes and Shared — a pin is device-local, so it works
+    /// just as well on somebody else's note. Trash keeps the server's ordering: a pin is about
+    /// finding things you are working on, and nothing in the Trash qualifies.
     private var currentItems: [NoteItem] {
-        notesDriveService.items(in: section, parentID: parentID)
+        let items = notesDriveService.items(in: section, parentID: parentID)
+        guard FeatureFlags.organization, section == .myNotes || section == .shared else { return items }
+        return pinStore.sorted(items)
     }
 
     private var navigationTitle: String {
@@ -122,6 +132,12 @@ struct NoteBrowserView: View {
         } message: {
             Text(offlineActionError ?? "")
         }
+        .sheet(item: $itemToTag) { item in
+            TagPickerSheet(item: item)
+        }
+        .sheet(item: $itemToShare) { item in
+            ShareSheet(item: item)
+        }
     }
 
     // MARK: - Note List
@@ -141,12 +157,12 @@ struct NoteBrowserView: View {
     @ViewBuilder
     private func noteRow(for item: NoteItem) -> some View {
         Group {
-            if item.type == .folder || FeatureFlags.markdownEditor {
+            if isOpenable(item) {
                 NavigationLink(value: item) {
-                    NoteRowView(item: item, offlineBadge: offlineBadge(for: item))
+                    rowContent(for: item)
                 }
             } else {
-                NoteRowView(item: item, offlineBadge: offlineBadge(for: item))
+                rowContent(for: item)
             }
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
@@ -160,6 +176,24 @@ struct NoteBrowserView: View {
         }
     }
 
+    private func rowContent(for item: NoteItem) -> some View {
+        NoteRowView(item: item,
+                    offlineBadge: offlineBadge(for: item),
+                    isPinned: FeatureFlags.organization && pinStore.isPinned(item.id),
+                    showsDisclosure: isOpenable(item))
+    }
+
+    /// Whether tapping the row leads anywhere.
+    ///
+    /// A folder shared *with* this account is the one row that doesn't: Drive's folder listings
+    /// filter on the caller's own user id, so `GET /drive/folders/{id}` 404s for a recipient and
+    /// there is nothing to push. The notes inside a shared folder are shared individually (see
+    /// `SharingService.share`), so they appear as rows of their own rather than being lost.
+    private func isOpenable(_ item: NoteItem) -> Bool {
+        if item.type == .folder { return !item.isShared }
+        return FeatureFlags.markdownEditor
+    }
+
     // MARK: - Swipe Actions
 
     @ViewBuilder
@@ -171,6 +205,10 @@ struct NoteBrowserView: View {
             } label: {
                 Label("Delete", systemImage: "trash")
             }
+        // Nothing destructive belongs here: these items belong to somebody else, and every
+        // mutating Drive endpoint except autosave is owner-scoped.
+        case .shared, .tags:
+            EmptyView()
         case .trash:
             Button(role: .destructive) {
                 notesDriveService.delete(itemID: item.id)
@@ -190,7 +228,14 @@ struct NoteBrowserView: View {
                 Label("Rename", systemImage: "pencil")
             }
             .tint(.orange)
+            starSwipeAction(for: item)
             offlineSwipeAction(for: item)
+        case .shared:
+            // Downloading is the one thing a recipient can do to somebody else's note without
+            // permission from Drive — it is a read.
+            offlineSwipeAction(for: item)
+        case .tags:
+            EmptyView()
         case .trash:
             Button {
                 notesDriveService.restore(itemID: item.id)
@@ -198,6 +243,19 @@ struct NoteBrowserView: View {
                 Label("Restore", systemImage: "arrow.uturn.backward")
             }
             .tint(.green)
+        }
+    }
+
+    @ViewBuilder
+    private func starSwipeAction(for item: NoteItem) -> some View {
+        if FeatureFlags.organization {
+            Button {
+                notesDriveService.setStarred(itemID: item.id, isStarred: !item.isStarred)
+            } label: {
+                Label(item.isStarred ? "Unstar" : "Favorite",
+                      systemImage: item.isStarred ? "star.slash" : "star")
+            }
+            .tint(.yellow)
         }
     }
 
@@ -238,6 +296,8 @@ struct NoteBrowserView: View {
             } label: {
                 Label("Move", systemImage: "folder")
             }
+            organizationContextMenuItems(for: item)
+            shareContextMenuItem(for: item)
             offlineContextMenuItems(for: item)
             Divider()
             Button(role: .destructive) {
@@ -245,6 +305,20 @@ struct NoteBrowserView: View {
             } label: {
                 Label("Delete", systemImage: "trash")
             }
+        case .shared:
+            // Pinning is device-local, so it works on somebody else's note; everything else in the
+            // organization menu is an owner-scoped write.
+            if FeatureFlags.organization {
+                Button {
+                    pinStore.togglePin(item.id)
+                } label: {
+                    Label(pinStore.isPinned(item.id) ? "Unpin" : "Pin to Top",
+                          systemImage: pinStore.isPinned(item.id) ? "pin.slash" : "pin")
+                }
+            }
+            offlineContextMenuItems(for: item)
+        case .tags:
+            EmptyView()
         case .trash:
             Button {
                 notesDriveService.restore(itemID: item.id)
@@ -255,6 +329,47 @@ struct NoteBrowserView: View {
                 notesDriveService.delete(itemID: item.id)
             } label: {
                 Label("Delete Forever", systemImage: "trash.slash")
+            }
+        }
+    }
+
+    /// Epic 12: favorite (server-side, shared with the web app), pin (this device only), and tags
+    /// (files only — folders can't be tagged).
+    @ViewBuilder
+    private func organizationContextMenuItems(for item: NoteItem) -> some View {
+        if FeatureFlags.organization {
+            Button {
+                notesDriveService.setStarred(itemID: item.id, isStarred: !item.isStarred)
+            } label: {
+                Label(item.isStarred ? "Remove from Favorites" : "Add to Favorites",
+                      systemImage: item.isStarred ? "star.slash" : "star")
+            }
+            Button {
+                pinStore.togglePin(item.id)
+            } label: {
+                Label(pinStore.isPinned(item.id) ? "Unpin" : "Pin to Top",
+                      systemImage: pinStore.isPinned(item.id) ? "pin.slash" : "pin")
+            }
+            if item.type == .file {
+                Button {
+                    itemToTag = item
+                } label: {
+                    Label("Tags\u{2026}", systemImage: "tag")
+                }
+            }
+        }
+    }
+
+    /// Epic 22: sharing is owner-only server-side, so the action is offered only for items this
+    /// account owns — which is everything reachable from My Notes, since Drive's listings are
+    /// owner-scoped.
+    @ViewBuilder
+    private func shareContextMenuItem(for item: NoteItem) -> some View {
+        if FeatureFlags.sharing && !item.isShared {
+            Button {
+                itemToShare = item
+            } label: {
+                Label("Share\u{2026}", systemImage: "person.crop.circle.badge.plus")
             }
         }
     }
@@ -375,6 +490,8 @@ struct NoteBrowserView: View {
     private var emptyStateIcon: String {
         switch section {
         case .myNotes: return "note.text"
+        case .shared:  return "person.2"
+        case .tags:    return "tag"
         case .trash:   return "trash"
         }
     }
@@ -382,6 +499,8 @@ struct NoteBrowserView: View {
     private var emptyStateTitle: String {
         switch section {
         case .myNotes: return "No Notes Here"
+        case .shared:  return "Nothing Shared With You"
+        case .tags:    return "No Tags Yet"
         case .trash:   return "Trash is Empty"
         }
     }
@@ -389,6 +508,9 @@ struct NoteBrowserView: View {
     private var emptyStateSubtitle: String {
         switch section {
         case .myNotes: return "Tap the note button to create your first Markdown note."
+        case .shared:  return "Notes and folders other people share with you appear here."
+        // TagsView owns this section; the browser only ever sees it via an exhaustive switch.
+        case .tags:    return "Tags group notes across folders."
         case .trash:   return "Deleted notes are moved here before being permanently removed."
         }
     }
@@ -415,5 +537,8 @@ struct NoteBrowserView: View {
             .environmentObject(NoteContentService())
             .environmentObject(OfflineStore())
             .environmentObject(VersionHistoryService())
+            .environmentObject(TagsService())
+            .environmentObject(PinStore())
+            .environmentObject(SharingService())
     }
 }

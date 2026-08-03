@@ -283,20 +283,206 @@ final class NotesDriveServiceTests: XCTestCase {
         XCTAssertTrue(result.contains(where: { $0.id == "t1" }))
     }
 
-    // MARK: - NoteItem.isVisibleInNotes
+    // MARK: - Server-side note filtering
 
-    func test_isVisibleInNotes_folder_isAlwaysVisible() {
-        let folder = makeFolder(id: "f1", name: "Any Folder")
-        XCTAssertTrue(NoteItem.isVisibleInNotes(folder))
+    /// The MIME this app writes has to be the one Drive's `type=note` listing matches, or notes
+    /// created here never come back in a listing.
+    func test_theNoteMIMEMatchesDrivesNativeNoteType() {
+        XCTAssertEqual(NoteItem.markdownMIME, "application/x-neutrino-note")
     }
 
-    func test_isVisibleInNotes_markdownFile_isVisible() {
-        let file = makeFile(id: "f1", name: "Notes.md", mimeType: NoteItem.markdownMIME)
-        XCTAssertTrue(NoteItem.isVisibleInNotes(file))
+    // MARK: - Epic 12: items(in: .tags)
+
+    /// Tags browse tags, not items — `TagsView` owns that listing.
+    func test_items_tags_isEmpty() {
+        let sut = NotesDriveService(myNotes: [makeFile(id: "f1", name: "Note.md")])
+
+        XCTAssertEqual(sut.items(in: .tags, parentID: nil).count, 0)
     }
 
-    func test_isVisibleInNotes_nonMarkdownFile_isHidden() {
-        let file = makeFile(id: "f1", name: "Report.pdf", mimeType: "application/pdf")
-        XCTAssertFalse(NoteItem.isVisibleInNotes(file))
+    // MARK: - Epic 12: item(id:)
+
+    func test_item_findsItemsInAllItems() {
+        let sut = NotesDriveService(myNotes: [makeFile(id: "f1", name: "Note.md")])
+
+        XCTAssertEqual(sut.item(id: "f1")?.name, "Note.md")
+    }
+
+    /// A note opened from Favorites or Recents was never part of a folder listing, so `allItems`
+    /// alone would not find it.
+    func test_item_findsItemsOnlyPresentInStarredOrRecents() {
+        let starred = makeFile(id: "s1", name: "Starred.md")
+        let recent = makeFile(id: "r1", name: "Recent.md")
+        let sut = NotesDriveService(starred: [starred], recents: [recent])
+
+        XCTAssertEqual(sut.item(id: "s1")?.name, "Starred.md")
+        XCTAssertEqual(sut.item(id: "r1")?.name, "Recent.md")
+    }
+
+    func test_item_unknownID_isNil() {
+        let sut = NotesDriveService()
+
+        XCTAssertNil(sut.item(id: "nope"))
+    }
+
+    // MARK: - Epic 12: setStarred
+
+    func test_setStarred_setsTheFlagImmediately() {
+        let file = makeFile(id: "f1", name: "Note.md")
+        let sut = NotesDriveService(myNotes: [file])
+
+        sut.setStarred(itemID: "f1", isStarred: true)
+
+        XCTAssertEqual(sut.allItems.first(where: { $0.id == "f1" })?.isStarred, true)
+    }
+
+    func test_setStarred_addsTheItemToFavorites() {
+        let file = makeFile(id: "f1", name: "Note.md")
+        let sut = NotesDriveService(myNotes: [file])
+
+        sut.setStarred(itemID: "f1", isStarred: true)
+
+        XCTAssertEqual(sut.starredItems.map(\.id), ["f1"])
+    }
+
+    func test_setStarred_putsTheNewestFavoriteFirst() {
+        let first = makeFile(id: "f1", name: "First.md")
+        let second = makeFile(id: "f2", name: "Second.md")
+        let sut = NotesDriveService(myNotes: [first, second])
+
+        sut.setStarred(itemID: "f1", isStarred: true)
+        sut.setStarred(itemID: "f2", isStarred: true)
+
+        XCTAssertEqual(sut.starredItems.map(\.id), ["f2", "f1"])
+    }
+
+    func test_setStarred_false_removesTheItemFromFavorites() {
+        var file = makeFile(id: "f1", name: "Note.md")
+        file.isStarred = true
+        let sut = NotesDriveService(myNotes: [file], starred: [file])
+
+        sut.setStarred(itemID: "f1", isStarred: false)
+
+        XCTAssertTrue(sut.starredItems.isEmpty)
+        XCTAssertEqual(sut.allItems.first(where: { $0.id == "f1" })?.isStarred, false)
+    }
+
+    func test_setStarred_updatesTheRecentsCopyToo() {
+        let file = makeFile(id: "f1", name: "Note.md")
+        let sut = NotesDriveService(myNotes: [file], recents: [file])
+
+        sut.setStarred(itemID: "f1", isStarred: true)
+
+        XCTAssertEqual(sut.recentItems.first(where: { $0.id == "f1" })?.isStarred, true)
+    }
+
+    /// Favorites and Recents are the only place a starred item lives when it was reached from
+    /// those tabs, so starring must work without the item ever being in `allItems`.
+    func test_setStarred_worksForAnItemKnownOnlyToRecents() {
+        let file = makeFile(id: "r1", name: "Recent.md")
+        let sut = NotesDriveService(recents: [file])
+
+        sut.setStarred(itemID: "r1", isStarred: true)
+
+        XCTAssertEqual(sut.starredItems.map(\.id), ["r1"])
+    }
+
+    func test_setStarred_unknownID_doesNothing() {
+        let sut = NotesDriveService()
+
+        sut.setStarred(itemID: "nope", isStarred: true)
+
+        XCTAssertTrue(sut.starredItems.isEmpty)
+    }
+
+    // MARK: - Epic 12: listings react to trash / restore
+
+    func test_delete_removesTheItemFromFavoritesAndRecents() {
+        var file = makeFile(id: "f1", name: "Note.md")
+        file.isStarred = true
+        let sut = NotesDriveService(myNotes: [file], starred: [file], recents: [file])
+
+        sut.delete(itemID: "f1")
+
+        XCTAssertTrue(sut.starredItems.isEmpty)
+        XCTAssertTrue(sut.recentItems.isEmpty)
+    }
+
+    func test_delete_keepsTheStarOnTheTrashedCopy() {
+        var file = makeFile(id: "f1", name: "Note.md")
+        file.isStarred = true
+        let sut = NotesDriveService(myNotes: [file])
+
+        sut.delete(itemID: "f1")
+
+        XCTAssertEqual(sut.trashItems.first(where: { $0.id == "f1" })?.isStarred, true)
+    }
+
+    func test_restore_putsAStarredItemBackIntoFavorites() {
+        var trashed = makeFile(id: "t1", name: "Note.md")
+        trashed.isTrashed = true
+        trashed.isStarred = true
+        let sut = NotesDriveService(trash: [trashed])
+
+        sut.restore(itemID: "t1")
+
+        XCTAssertEqual(sut.starredItems.map(\.id), ["t1"])
+    }
+
+    // MARK: - Epic 12: noteContentWasSaved
+
+    func test_noteContentWasSaved_updatesTheRecentsAndFavoritesCopies() {
+        let file = makeFile(id: "f1", name: "Note.md")
+        let sut = NotesDriveService(myNotes: [file], starred: [file], recents: [file])
+        let savedAt = Date(timeIntervalSince1970: 1_800_000_000)
+
+        sut.noteContentWasSaved(itemID: "f1", size: 4242, modifiedAt: savedAt)
+
+        XCTAssertEqual(sut.recentItems.first?.modifiedAt, savedAt)
+        XCTAssertEqual(sut.recentItems.first?.size, 4242)
+        XCTAssertEqual(sut.starredItems.first?.modifiedAt, savedAt)
+    }
+
+    // MARK: - Epic 22: the Shared section
+
+    private func makeSharedFile(id: String, name: String) -> NoteItem {
+        NoteItem(id: id, name: name, type: .file, parentID: "their-folder", size: 1024,
+                 modifiedAt: Date(), isTrashed: false, mimeType: NoteItem.markdownMIME,
+                 isStarred: false, isShared: true)
+    }
+
+    func test_items_shared_returnsTheSharedListing() {
+        let sut = NotesDriveService(shared: [makeSharedFile(id: "s1", name: "Theirs.md")])
+
+        XCTAssertEqual(sut.items(in: .shared, parentID: nil).map(\.id), ["s1"])
+    }
+
+    /// Somebody else's folder cannot be listed, so every shared item sits at the top level and the
+    /// section ignores `parentID` rather than filtering everything away.
+    func test_items_shared_ignoresParentID() {
+        let sut = NotesDriveService(shared: [makeSharedFile(id: "s1", name: "Theirs.md")])
+
+        XCTAssertEqual(sut.items(in: .shared, parentID: "their-folder").map(\.id), ["s1"])
+    }
+
+    func test_items_shared_isEmptyWhenNothingIsShared() {
+        let sut = NotesDriveService(myNotes: [makeFile(id: "f1", name: "Mine.md")])
+
+        XCTAssertEqual(sut.items(in: .shared, parentID: nil), [])
+    }
+
+    /// The editor is pushed with an item found this way, and `isShared` is what makes it ask the
+    /// server for a role instead of assuming ownership.
+    func test_item_findsSharedItemsAndKeepsTheSharedFlag() {
+        let sut = NotesDriveService(shared: [makeSharedFile(id: "s1", name: "Theirs.md")])
+
+        XCTAssertEqual(sut.item(id: "s1")?.name, "Theirs.md")
+        XCTAssertEqual(sut.item(id: "s1")?.isShared, true)
+    }
+
+    func test_ownedItems_areNotMarkedShared() {
+        let sut = NotesDriveService(myNotes: [makeFile(id: "f1", name: "Mine.md")])
+
+        XCTAssertEqual(sut.item(id: "f1")?.isShared, false)
     }
 }

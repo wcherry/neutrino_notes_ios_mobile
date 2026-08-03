@@ -315,16 +315,25 @@ Fast, offline-capable search.
 
 ⸻
 
-⬜ Epic 12 — Organization
+✅ Epic 12 — Organization
 
 Features
 
-* ⬜ Favorites
-* ⬜ Pinning
-* ⬜ Recent Notes
-* ⬜ Trash
-* ⬜ Tags
-* ⬜ Nested folders
+* ✅ Favorites — Drive's `isStarred` on files and folders, so a star set here shows up in the
+  web app and vice versa
+* ✅ Pinning — **device-local only.** Drive has no `is_pinned` column and no endpoint that could
+  carry one, and the web app has no pin concept, so there is nothing to sync with; pins live in
+  `UserDefaults` and float items to the top of the current list. Favorites is the cross-device
+  mechanism
+* ✅ Recent Notes — the server's own `view=recent` listing, so an edit made in the web app shows
+  up here
+* ✅ Trash — delivered in Epic 4 (trash, restore, delete forever, empty trash)
+* ✅ Tags — full CRUD plus per-note assignment against Drive's tag APIs, with tag counts, paged
+  tag listings, and a searchable picker that writes one idempotent request per changed tag. Note
+  that a tag's *name* is stored on the server in the clear, exactly like a file's name; note
+  bodies stay encrypted. The web app has since shipped its own Drive tag UI, so tags now round-trip
+  between the two. Tag chips on browser rows stay blocked on a bulk "tags for these files" endpoint
+* ✅ Nested folders — delivered in Epic 4 (create, navigate, move)
 
 Milestone
 
@@ -444,11 +453,30 @@ Phase 7 — Collaboration
 
 Reuse existing Neutrino sharing infrastructure.
 
-⬜ Epic 22
+✅ Epic 22 — Sharing & Permissions
 
-* ⬜ Share notes
-* ⬜ Shared folders
-* ⬜ Permissions
+* ✅ Share notes — a permission grant *plus* the note's DEK re-wrapped on-device for the
+  recipient's public key (`POST /drive/files/{id}/key/share`), which is what actually makes an
+  encrypted note readable. Someone who hasn't imported keys yet can't be given a readable note at
+  all; the share sheet says so rather than sharing something undecryptable, and **Send Key** fixes
+  it once they have
+* ✅ Shared folders — the folder grant *and* the same treatment for every note inside it, because
+  Drive's folder listings are owner-scoped: a recipient cannot enumerate someone else's folder, so
+  without per-note sharing they would see a folder they can't open. Notes added later need the
+  sheet's "Re-share folder contents" — a DEK can only be re-sealed on a device that can unseal it
+* ✅ Permissions — viewer / commenter / editor, granted, changed and revoked from the share sheet
+  (owner-only, as the server enforces). Notes shared *with* this account appear in the Notes tab's
+  new **Shared** section; they open read-only unless `GET /files/{id}/info` reports an editable
+  role, and the owner-scoped actions (Favorites, rename, version history) are disabled on them
+* ⬜ Public share links — **deliberately not shipped.** Drive's link endpoints serve the stored
+  bytes, which for a note is ciphertext; a link recipient has no key ref and no way to obtain one,
+  so a "copy link" button would reliably deliver an unreadable file. The web app has the same hole.
+  Person sharing re-wraps the key and works
+
+Milestone
+
+Notes and folders can be shared with other Neutrino accounts, with roles, and stay end-to-end
+encrypted while shared.
 
 ⸻
 
@@ -472,7 +500,11 @@ Real-time collaboration
 
 Phase 8 — Polish
 
-* ⬜ Face ID / Touch ID lock
+* ✅ Face ID / Touch ID lock — opt-in app lock in Settings (`AppLockService`, `LockScreenView`),
+  with a configurable auto-lock grace period and an app-switcher privacy shield. Evaluates
+  `deviceOwnerAuthentication`, so the device passcode is always a fallback and a failed sensor
+  never strands a user; turning the lock off requires the same check as turning it on. This
+  protects the *screen*, not the notes — the notes are already end-to-end encrypted
 * ⬜ Handoff
 * ⬜ Universal Clipboard
 * ⬜ Multi-window (iPad)
