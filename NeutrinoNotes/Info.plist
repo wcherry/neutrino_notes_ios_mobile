@@ -44,6 +44,8 @@
 	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>Neutrino Notes needs camera access to scan QR codes for key import.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Neutrino Notes uses Face ID to unlock your notes.</string>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>

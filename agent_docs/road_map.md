@@ -500,7 +500,11 @@ Real-time collaboration
 
 Phase 8 — Polish
 
-* ⬜ Face ID / Touch ID lock
+* ✅ Face ID / Touch ID lock — opt-in app lock in Settings (`AppLockService`, `LockScreenView`),
+  with a configurable auto-lock grace period and an app-switcher privacy shield. Evaluates
+  `deviceOwnerAuthentication`, so the device passcode is always a fallback and a failed sensor
+  never strands a user; turning the lock off requires the same check as turning it on. This
+  protects the *screen*, not the notes — the notes are already end-to-end encrypted
 * ⬜ Handoff
 * ⬜ Universal Clipboard
 * ⬜ Multi-window (iPad)

@@ -29,4 +29,10 @@ enum FeatureFlags {
     /// Neutrino account, managing their role, and the Shared section listing what others have
     /// shared with you). When false, the Shared section is hidden and no share actions appear.
     static let sharing: Bool = true
+
+    /// Set to true to enable the Phase 8 app lock feature (Face ID / Touch ID, with device
+    /// passcode fallback, in front of the app's content). When false, the Settings section is
+    /// hidden and neither the lock screen nor the app-switcher privacy shield is ever presented,
+    /// regardless of what the user previously turned on.
+    static let appLock: Bool = true
 }
