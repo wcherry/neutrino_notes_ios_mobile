@@ -194,17 +194,28 @@ final class NoteContentService: ObservableObject {
 
     /// The server's current `updatedAt` for a file, used for conflict detection.
     ///
-    /// Drive has no per-file metadata endpoint — `GET /files/{id}` returns the encrypted body,
-    /// not JSON metadata — so the only way to read a file's current `updatedAt` is to list the
-    /// folder that contains it and pick the matching entry. Root-level notes come from
-    /// `GET /drive?type=note`; notes inside a folder from `GET /drive/folders/{id}`.
-    ///
-    /// Returns nil if the file is no longer present server-side (deleted, trashed, or moved to
-    /// a different folder than the caller's cached `parentID`).
+    /// Returns nil if the file is no longer reachable server-side — deleted, trashed, or access
+    /// revoked — which `SyncEngine` reads as "nothing to compare against".
     func fetchServerModifiedAt(for item: NoteItem) async throws -> Date? {
+        let info = try await fileInfo(for: item.id)
+        logger.debug("fetchServerModifiedAt: id=\(item.id, privacy: .public) found=\(info?.isLive == true)")
+        // A trashed file still has metadata but is no longer somewhere an edit can land.
+        guard let info, info.isLive else { return nil }
+        return info.updatedAt
+    }
+
+    // MARK: - File Info
+
+    /// Metadata for one file, including the caller's role on it.
+    ///
+    /// This is the only Drive endpoint that answers for a file the caller can *access* rather than
+    /// one they own, so it is what makes shared notes work: the folder listing this used to rely on
+    /// belongs to the note's owner and 404s for a recipient. Returns nil when the file is gone
+    /// (404) or no longer shared with this account (403) — both mean "not mine to read" rather than
+    /// an error worth surfacing.
+    func fileInfo(for fileID: String) async throws -> NoteFileInfo? {
         let token = try await authorizedToken()
-        let path = item.parentID.map { "/api/v1/drive/folders/\($0)" } ?? "/api/v1/drive?type=note"
-        guard let url = URL(string: baseURL + path) else {
+        guard let url = URL(string: baseURL + "/api/v1/drive/files/\(fileID)/info") else {
             throw NoteContentError.serverError(statusCode: 0)
         }
         var request = URLRequest(url: url)
@@ -217,21 +228,17 @@ final class NoteContentService: ObservableObject {
         } catch {
             throw NoteContentError.networkError(underlying: error)
         }
-        if let http = response as? HTTPURLResponse, http.statusCode == 404 {
-            // The containing folder is gone, so the file is gone with it.
+        if let http = response as? HTTPURLResponse, http.statusCode == 404 || http.statusCode == 403 {
+            logger.debug("fileInfo: id=\(fileID, privacy: .public) unavailable (\(http.statusCode))")
             return nil
         }
         try Self.checkStatus(response)
-
-        let listing: APIFolderListingResponse
         do {
-            listing = try Self.decoder.decode(APIFolderListingResponse.self, from: data)
+            return try NoteFileInfo.decoder.decode(NoteFileInfo.self, from: data)
         } catch {
+            logger.error("fileInfo decode failed: id=\(fileID, privacy: .public) \(error, privacy: .public)")
             throw NoteContentError.decodingError(underlying: error)
         }
-        let match = listing.files.first { $0.id == item.id }?.updatedAt
-        logger.debug("fetchServerModifiedAt: id=\(item.id, privacy: .public) found=\(match != nil)")
-        return match
     }
 
     // MARK: - Crypto Helpers (internal for unit testing)
@@ -286,6 +293,40 @@ final class NoteContentService: ObservableObject {
             throw NoteContentError.encryptionFailed
         }
         return b64
+    }
+
+    /// Seals `dek` to *another user's* Curve25519 public key, so it can be handed to Drive's
+    /// `POST /files/{id}/key/share` endpoint.
+    ///
+    /// This is the whole of what makes sharing an encrypted note work: the recipient's copy of the
+    /// key is sealed on this device, to their public key, and the server only ever sees the sealed
+    /// result. `recipientPublicKey` is the Base64URL string `GET /auth/users/{id}/public-key`
+    /// returns.
+    func seal(_ dek: Bytes, toRecipientPublicKey recipientPublicKey: String) throws -> String {
+        guard let keyData = Data(base64URLEncoded: recipientPublicKey) else {
+            logger.error("seal(to:): recipient public key is not valid Base64URL")
+            throw NoteContentError.encryptionFailed
+        }
+        guard let sealed = Self.sodium.box.seal(message: dek, recipientPublicKey: Array(keyData)) else {
+            throw NoteContentError.encryptionFailed
+        }
+        guard let b64 = Self.sodium.utils.bin2base64(sealed, variant: .URLSAFE_NO_PADDING) else {
+            throw NoteContentError.encryptionFailed
+        }
+        return b64
+    }
+
+    /// The caller's sealed DEK for a file, or nil when the file has no key ref at all — a plaintext
+    /// file uploaded outside this app. Distinguishing the two matters when sharing: "no key to
+    /// re-wrap" is a fact about the file, not a failure.
+    func sealedFileKey(for fileID: String) async throws -> String? {
+        let token = try await authorizedToken()
+        do {
+            return try await fetchSealedDEK(fileID: fileID, token: token)
+        } catch NoteContentError.serverError(statusCode: 404) {
+            logger.debug("sealedFileKey: id=\(fileID, privacy: .public) has no key ref")
+            return nil
+        }
     }
 
     /// Seals `dek` to the caller's stored Curve25519 public key (crypto_box_seal).
@@ -484,11 +525,6 @@ private struct APIFileResponse: Decodable {
     let sizeBytes: Int64
     let mimeType: String
     let updatedAt: Date
-}
-
-/// Folder/root listing, used only to look up a file's current `updatedAt`.
-private struct APIFolderListingResponse: Decodable {
-    let files: [APIFileResponse]
 }
 
 private struct APIKeyResponse: Decodable {

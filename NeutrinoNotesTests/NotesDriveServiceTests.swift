@@ -283,21 +283,12 @@ final class NotesDriveServiceTests: XCTestCase {
         XCTAssertTrue(result.contains(where: { $0.id == "t1" }))
     }
 
-    // MARK: - NoteItem.isVisibleInNotes
+    // MARK: - Server-side note filtering
 
-    func test_isVisibleInNotes_folder_isAlwaysVisible() {
-        let folder = makeFolder(id: "f1", name: "Any Folder")
-        XCTAssertTrue(NoteItem.isVisibleInNotes(folder))
-    }
-
-    func test_isVisibleInNotes_markdownFile_isVisible() {
-        let file = makeFile(id: "f1", name: "Notes.md", mimeType: NoteItem.markdownMIME)
-        XCTAssertTrue(NoteItem.isVisibleInNotes(file))
-    }
-
-    func test_isVisibleInNotes_nonMarkdownFile_isHidden() {
-        let file = makeFile(id: "f1", name: "Report.pdf", mimeType: "application/pdf")
-        XCTAssertFalse(NoteItem.isVisibleInNotes(file))
+    /// The MIME this app writes has to be the one Drive's `type=note` listing matches, or notes
+    /// created here never come back in a listing.
+    func test_theNoteMIMEMatchesDrivesNativeNoteType() {
+        XCTAssertEqual(NoteItem.markdownMIME, "application/x-neutrino-note")
     }
 
     // MARK: - Epic 12: items(in: .tags)
@@ -450,5 +441,48 @@ final class NotesDriveServiceTests: XCTestCase {
         XCTAssertEqual(sut.recentItems.first?.modifiedAt, savedAt)
         XCTAssertEqual(sut.recentItems.first?.size, 4242)
         XCTAssertEqual(sut.starredItems.first?.modifiedAt, savedAt)
+    }
+
+    // MARK: - Epic 22: the Shared section
+
+    private func makeSharedFile(id: String, name: String) -> NoteItem {
+        NoteItem(id: id, name: name, type: .file, parentID: "their-folder", size: 1024,
+                 modifiedAt: Date(), isTrashed: false, mimeType: NoteItem.markdownMIME,
+                 isStarred: false, isShared: true)
+    }
+
+    func test_items_shared_returnsTheSharedListing() {
+        let sut = NotesDriveService(shared: [makeSharedFile(id: "s1", name: "Theirs.md")])
+
+        XCTAssertEqual(sut.items(in: .shared, parentID: nil).map(\.id), ["s1"])
+    }
+
+    /// Somebody else's folder cannot be listed, so every shared item sits at the top level and the
+    /// section ignores `parentID` rather than filtering everything away.
+    func test_items_shared_ignoresParentID() {
+        let sut = NotesDriveService(shared: [makeSharedFile(id: "s1", name: "Theirs.md")])
+
+        XCTAssertEqual(sut.items(in: .shared, parentID: "their-folder").map(\.id), ["s1"])
+    }
+
+    func test_items_shared_isEmptyWhenNothingIsShared() {
+        let sut = NotesDriveService(myNotes: [makeFile(id: "f1", name: "Mine.md")])
+
+        XCTAssertEqual(sut.items(in: .shared, parentID: nil), [])
+    }
+
+    /// The editor is pushed with an item found this way, and `isShared` is what makes it ask the
+    /// server for a role instead of assuming ownership.
+    func test_item_findsSharedItemsAndKeepsTheSharedFlag() {
+        let sut = NotesDriveService(shared: [makeSharedFile(id: "s1", name: "Theirs.md")])
+
+        XCTAssertEqual(sut.item(id: "s1")?.name, "Theirs.md")
+        XCTAssertEqual(sut.item(id: "s1")?.isShared, true)
+    }
+
+    func test_ownedItems_areNotMarkedShared() {
+        let sut = NotesDriveService(myNotes: [makeFile(id: "f1", name: "Mine.md")])
+
+        XCTAssertEqual(sut.item(id: "f1")?.isShared, false)
     }
 }

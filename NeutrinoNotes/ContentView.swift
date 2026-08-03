@@ -67,4 +67,5 @@ struct ContentView: View {
         .environmentObject(VersionHistoryService())
         .environmentObject(TagsService())
         .environmentObject(PinStore())
+        .environmentObject(SharingService())
 }

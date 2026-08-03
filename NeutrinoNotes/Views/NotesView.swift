@@ -14,9 +14,14 @@ struct NotesView: View {
     @State private var selectedSection: NotesSection = .myNotes
     @State private var path = NavigationPath()
 
-    /// Tags are an Epic 12 feature, so the picker offers them only when it is enabled.
+    /// Shared (Epic 22) and Tags (Epic 12) are feature-flagged, so the picker offers each only
+    /// when its epic is enabled; My Notes and Trash have been there since Epic 4.
     private var sections: [NotesSection] {
-        FeatureFlags.organization ? NotesSection.allCases : [.myNotes, .trash]
+        var sections: [NotesSection] = [.myNotes]
+        if FeatureFlags.sharing { sections.append(.shared) }
+        if FeatureFlags.organization { sections.append(.tags) }
+        sections.append(.trash)
+        return sections
     }
 
     // MARK: - Body
@@ -54,7 +59,7 @@ struct NotesView: View {
                             }
                         }
                         .pickerStyle(.segmented)
-                        .frame(maxWidth: 320)
+                        .frame(maxWidth: 400)
                     }
                 }
                 // A folder (or tag) pushed under one section has no meaning under the next, so

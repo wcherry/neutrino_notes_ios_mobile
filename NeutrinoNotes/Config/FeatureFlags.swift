@@ -24,4 +24,9 @@ enum FeatureFlags {
     /// recent notes, and tags). When false, the Recents and Favorites tabs show their placeholders,
     /// the Tags section is hidden, and no star/pin/tag actions appear.
     static let organization: Bool = true
+
+    /// Set to true to enable the Epic 22 Sharing feature (sharing a note or folder with another
+    /// Neutrino account, managing their role, and the Shared section listing what others have
+    /// shared with you). When false, the Shared section is hidden and no share actions appear.
+    static let sharing: Bool = true
 }

@@ -36,6 +36,12 @@ struct NoteItem: Identifiable, Hashable {
     /// Epic 12: Drive's `isStarred` flag — the Favorites model, shared with the web app and
     /// carried by both files and folders. Defaulted so existing call sites are unaffected.
     var isStarred: Bool = false
+    /// Epic 22: true for items reached through `GET /drive/shared-with-me`, i.e. owned by somebody
+    /// else. Every other Drive listing this app calls is owner-scoped server-side, so anything not
+    /// carrying this flag belongs to the signed-in account — which is what decides whether the
+    /// share sheet is available (only owners may list or change permissions) and whether the editor
+    /// has to ask the server what this account is allowed to do.
+    var isShared: Bool = false
 
     // MARK: - Computed
 
@@ -44,10 +50,4 @@ struct NoteItem: Identifiable, Hashable {
         type == .folder ? "folder.fill" : "doc.text.fill"
     }
 
-    // MARK: - Visibility
-
-    /// Folders are always shown (they're containers); files are shown only when Markdown.
-    static func isVisibleInNotes(_ item: NoteItem) -> Bool {
-        item.type == .folder || item.mimeType == markdownMIME
-    }
 }

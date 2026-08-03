@@ -22,8 +22,9 @@ enum NotesDriveError: LocalizedError {
 // MARK: - NotesDriveService
 
 // Browses and organizes the Markdown documents stored in Neutrino Drive. Reuses the existing
-// Drive folder/file/trash APIs — the Notes app has no backend of its own — and filters every
-// response down to folders and Drive's note MIME type (see NoteItem.isVisibleInNotes).
+// Drive folder/file/trash APIs — the Notes app has no backend of its own. Every listing passes
+// `type=note`, so the server returns only Drive's note MIME type; folders come back unfiltered
+// because a folder may hold notes whatever else is in it.
 @MainActor
 final class NotesDriveService: ObservableObject {
 
@@ -38,6 +39,9 @@ final class NotesDriveService: ObservableObject {
     @Published private(set) var starredItems: [NoteItem] = []
     /// Epic 12: most recently modified notes from GET /api/v1/drive?view=recent.
     @Published private(set) var recentItems: [NoteItem] = []
+    /// Epic 22: folders and notes other people have shared with this account, from
+    /// GET /api/v1/drive/shared-with-me. Every item here carries `isShared`.
+    @Published private(set) var sharedItems: [NoteItem] = []
 
     @Published var isLoading = false
     @Published var error: String?
@@ -47,12 +51,14 @@ final class NotesDriveService: ObservableObject {
     #if DEBUG
     /// Seed state for unit tests — bypasses the network entirely.
     convenience init(myNotes: [NoteItem] = [], trash: [NoteItem] = [],
-                     starred: [NoteItem] = [], recents: [NoteItem] = []) {
+                     starred: [NoteItem] = [], recents: [NoteItem] = [],
+                     shared: [NoteItem] = []) {
         self.init()
         self.allItems = myNotes
         self.trashItems = trash
         self.starredItems = starred
         self.recentItems = recents
+        self.sharedItems = shared
     }
     #endif
 
@@ -90,18 +96,22 @@ final class NotesDriveService: ObservableObject {
     func items(in section: NotesSection, parentID: String?) -> [NoteItem] {
         switch section {
         case .myNotes: return allItems.filter { $0.parentID == parentID }
+        // Flat by necessity: someone else's folder can't be listed, so `parentID` is meaningless
+        // here and every shared item sits at the top level (see loadSharedWithMe).
+        case .shared:  return sharedItems
         // Tags browse tags, not items; TagsView owns that listing (see NotesSection.tags).
         case .tags:    return []
         case .trash:   return trashItems
         }
     }
 
-    /// Looks an item up wherever it currently lives. A note reached from Favorites or Recents was
-    /// never part of a folder listing, so `allItems` alone would not find it.
+    /// Looks an item up wherever it currently lives. A note reached from Favorites, Recents or
+    /// Shared was never part of a folder listing, so `allItems` alone would not find it.
     func item(id: String) -> NoteItem? {
         allItems.first(where: { $0.id == id })
             ?? starredItems.first(where: { $0.id == id })
             ?? recentItems.first(where: { $0.id == id })
+            ?? sharedItems.first(where: { $0.id == id })
             ?? trashItems.first(where: { $0.id == id })
     }
 
@@ -116,39 +126,36 @@ final class NotesDriveService: ObservableObject {
             case .myNotes:
                 let response: APIFolderContentsResponse
                 if let id = parentID {
-                    // /folders/{id} has no server-side type filter — rely on the client-side
-                    // isVisibleInNotes filter below.
-                    response = try await get("/api/v1/drive/folders/\(id)")
+                    response = try await get("/api/v1/drive/folders/\(id)?type=note")
                 } else {
-                    // Root listing supports filtering to a single MIME-mapped type server-side.
                     response = try await get("/api/v1/drive?type=note")
                 }
                 let folders = response.folders.map { NoteItem(folder: $0) }
-                let allFiles = response.files.map { NoteItem(file: $0) }
-                let files = allFiles.filter(NoteItem.isVisibleInNotes)
-                logger.debug("loadSection myNotes: API returned \(response.folders.count) folders, \(response.files.count) files: \(allFiles.map { "\($0.name) [\($0.mimeType ?? "nil")]" }.joined(separator: ", "), privacy: .public)")
-                if allFiles.count != files.count {
-                    let dropped = allFiles.filter { !NoteItem.isVisibleInNotes($0) }
-                    logger.debug("loadSection myNotes: filtered out \(dropped.count) non-Markdown file(s): \(dropped.map { "\($0.name) [\($0.mimeType ?? "nil")]" }.joined(separator: ", "), privacy: .public)")
-                }
+                let files = response.files.map { NoteItem(file: $0) }
+                logger.debug("loadSection myNotes: API returned \(response.folders.count) folders, \(response.files.count) notes: \(files.map { "\($0.name) [\($0.mimeType ?? "nil")]" }.joined(separator: ", "), privacy: .public)")
                 // Replace cached items for this parent to avoid stale duplicates.
                 allItems.removeAll { $0.parentID == parentID }
                 allItems.append(contentsOf: folders)
                 allItems.append(contentsOf: files)
                 logger.debug("loadSection myNotes: displaying \(folders.count) folders, \(files.count) Markdown files")
 
+            case .shared:
+                let response: APISharedWithMeResponse = try await get("/api/v1/drive/shared-with-me?type=note")
+                let folders = response.folders.map { NoteItem(sharedFolder: $0) }
+                let files = response.files.map { NoteItem(sharedFile: $0) }
+                sharedItems = folders + files
+                logger.debug("loadSection shared: \(folders.count) folders, \(files.count) notes")
+
             case .tags:
                 // Nothing to fetch here — TagsService loads the tag list.
                 break
 
             case .trash:
-                let response: APITrashContentsResponse = try await get("/api/v1/drive/trash")
+                let response: APITrashContentsResponse = try await get("/api/v1/drive/trash?type=note")
                 let folders = response.folders.map { NoteItem(trashFolder: $0) }
-                let allFiles = response.files.map { NoteItem(trashFile: $0) }
-                let files = allFiles.filter(NoteItem.isVisibleInNotes)
-                logger.debug("loadSection trash: API returned \(response.folders.count) folders, \(response.files.count) files: \(allFiles.map { "\($0.name) [\($0.mimeType ?? "nil")]" }.joined(separator: ", "), privacy: .public)")
+                let files = response.files.map { NoteItem(trashFile: $0) }
                 trashItems = folders + files
-                logger.debug("loadSection trash: displaying \(folders.count) folders, \(files.count) Markdown files")
+                logger.debug("loadSection trash: \(folders.count) folders, \(files.count) notes")
             }
         } catch {
             logger.error("loadSection \(section.rawValue, privacy: .public) failed: \(error, privacy: .public)")
@@ -160,18 +167,14 @@ final class NotesDriveService: ObservableObject {
     // MARK: - Epic 12 Listings
 
     /// Loads the Favorites listing: every starred folder and note, most recently starred first.
-    ///
-    /// `?view=starred` and `?type=note` cannot be combined — the server checks `type` first and
-    /// returns before it looks at `view` — so the response is reduced to folders and Markdown
-    /// files here, with the same predicate the folder listing uses.
     func loadStarred() async {
         logger.debug("loadStarred")
         isLoading = true
         error = nil
         do {
-            let response: APIFolderContentsResponse = try await get("/api/v1/drive?view=starred")
+            let response: APIFolderContentsResponse = try await get("/api/v1/drive?view=starred&type=note")
             let folders = response.folders.map { NoteItem(folder: $0) }
-            let files = response.files.map { NoteItem(file: $0) }.filter(NoteItem.isVisibleInNotes)
+            let files = response.files.map { NoteItem(file: $0) }
             starredItems = folders + files
             logger.debug("loadStarred: \(folders.count) folders, \(files.count) notes")
         } catch {
@@ -182,16 +185,17 @@ final class NotesDriveService: ObservableObject {
     }
 
     /// Loads the Recents listing: the most recently modified notes, newest first. Trashed items
-    /// are excluded server-side. Folders are never part of this view — the server returns files
-    /// only — so Recents is a flat list of notes.
+    /// and non-notes are excluded server-side, and `limit` counts notes rather than files of
+    /// every type. Folders are never part of this view — the server returns files only — so
+    /// Recents is a flat list of notes.
     func loadRecents(limit: Int = 50) async {
         logger.debug("loadRecents: limit=\(limit)")
         isLoading = true
         error = nil
         do {
-            let response: APIFolderContentsResponse = try await get("/api/v1/drive?view=recent&limit=\(limit)")
-            recentItems = response.files.map { NoteItem(file: $0) }.filter(NoteItem.isVisibleInNotes)
-            logger.debug("loadRecents: \(self.recentItems.count) of \(response.files.count) recent files are notes")
+            let response: APIFolderContentsResponse = try await get("/api/v1/drive?view=recent&type=note&limit=\(limit)")
+            recentItems = response.files.map { NoteItem(file: $0) }
+            logger.debug("loadRecents: \(self.recentItems.count) recent notes")
         } catch {
             logger.error("loadRecents failed: \(error, privacy: .public)")
             self.error = error.localizedDescription
@@ -620,6 +624,46 @@ private extension NoteItem {
         )
     }
 
+    /// A folder somebody else owns. `parentID` is deliberately dropped: it names a folder in the
+    /// owner's drive, which this account cannot list, and leaving it in would make the item look
+    /// like a child of a folder that isn't there.
+    ///
+    /// The star flag is dropped too. `is_starred` is a single column on the row, so it is the
+    /// *owner's* star; showing it here would put a Favorites badge on somebody else's note that
+    /// this account never set and cannot clear (the PATCH is owner-scoped).
+    init(sharedFolder: APIFolderResponse) {
+        self.init(
+            id: sharedFolder.id,
+            name: sharedFolder.name,
+            type: .folder,
+            parentID: nil,
+            size: nil,
+            modifiedAt: sharedFolder.updatedAt,
+            isTrashed: false,
+            mimeType: nil,
+            isStarred: false,
+            isShared: true
+        )
+    }
+
+    /// A note somebody else owns. `parentID` is kept — it is the owner's folder id, which this
+    /// account can't list but which `/files/{id}/info` and the content endpoints don't need.
+    /// The star flag is dropped for the same reason as `init(sharedFolder:)`.
+    init(sharedFile: APIFileResponse) {
+        self.init(
+            id: sharedFile.id,
+            name: sharedFile.name,
+            type: .file,
+            parentID: sharedFile.folderId,
+            size: sharedFile.sizeBytes,
+            modifiedAt: sharedFile.updatedAt,
+            isTrashed: false,
+            mimeType: sharedFile.mimeType,
+            isStarred: false,
+            isShared: true
+        )
+    }
+
     init(trashFolder: APITrashFolderItem) {
         self.init(
             id: trashFolder.id,
@@ -670,6 +714,13 @@ private struct APIFileResponse: Decodable {
     let mimeType: String
     let updatedAt: Date
     let isStarred: Bool
+}
+
+/// `GET /api/v1/drive/shared-with-me` — the same file and folder shapes as a folder listing, but
+/// flat and owned by other people.
+private struct APISharedWithMeResponse: Decodable {
+    let files: [APIFileResponse]
+    let folders: [APIFolderResponse]
 }
 
 private struct APITrashContentsResponse: Decodable {

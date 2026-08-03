@@ -25,6 +25,9 @@ struct NoteRowView: View {
     /// Epic 12: whether this item is pinned on *this device*. Passed in rather than read from
     /// `PinStore` so the row stays a plain value-driven view, as with `offlineBadge`.
     var isPinned: Bool = false
+    /// Epic 22: folders shared *with* this account can't be opened — Drive's folder listings are
+    /// owner-scoped — so their rows drop the chevron rather than promise a screen that 404s.
+    var showsDisclosure: Bool = true
 
     // MARK: - Body
 
@@ -105,8 +108,14 @@ struct NoteRowView: View {
                     .foregroundStyle(.yellow)
                     .accessibilityLabel("Favorite")
             }
+            if item.isShared {
+                Image(systemName: "person.2.fill")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Shared with you")
+            }
             offlineBadgeView
-            if item.type == .folder {
+            if item.type == .folder && showsDisclosure {
                 Image(systemName: "chevron.right")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
@@ -149,6 +158,7 @@ struct NoteRowView: View {
         if item.isTrashed { components.append("In Trash") }
         if isPinned { components.append("Pinned on this device") }
         if item.isStarred { components.append("Favorite") }
+        if item.isShared { components.append("Shared with you") }
         switch offlineBadge {
         case .downloading: components.append("Downloading for offline use")
         case .available: components.append("Available Offline")

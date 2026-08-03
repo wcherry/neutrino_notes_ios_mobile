@@ -40,7 +40,7 @@ final class OrganizationViewTests: XCTestCase {
     }
 
     /// Every environment object the Notes-tab views read, matching the app's own wiring.
-    private func host(_ view: some View) {
+    private func host(_ view: some View, tagsService: TagsService? = nil) {
         let monitor = NetworkMonitor(autoStart: false)
         monitor.setOnlineForTesting(false)
         let content = NoteContentService()
@@ -56,7 +56,7 @@ final class OrganizationViewTests: XCTestCase {
             .environmentObject(offlineStore)
             .environmentObject(SyncEngine(store: offlineStore, monitor: monitor, content: content))
             .environmentObject(VersionHistoryService())
-            .environmentObject(TagsService(tags: [makeTag()]))
+            .environmentObject(tagsService ?? TagsService(tags: [makeTag()]))
             .environmentObject(PinStore(defaults: UserDefaults(suiteName: "OrganizationViewTests.\(UUID().uuidString)")!))
 
         let hosting = UIHostingController(rootView: wired)
@@ -88,6 +88,14 @@ final class OrganizationViewTests: XCTestCase {
 
     func test_tagNameSheet_builds() {
         host(TagNameSheet(title: "New Tag", initialName: "") { _ in })
+    }
+
+    /// The editor reads `TagsService` for its tag bar, so it now needs that environment object as
+    /// well as the six it already took.
+    func test_noteEditorView_buildsWithTaggedNote() {
+        let tagged = TagsService(tags: [makeTag()], tagsByFileID: ["file-1": [makeTag()]])
+
+        host(NavigationStack { NoteEditorView(item: makeItem()) }, tagsService: tagged)
     }
 
     func test_noteBrowserView_buildsWithOrganizationActions() {

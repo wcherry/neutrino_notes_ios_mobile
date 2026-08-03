@@ -11,6 +11,7 @@ struct NeutrinoNotesApp: App {
     @StateObject private var versionHistoryService = VersionHistoryService()
     @StateObject private var tagsService = TagsService()
     @StateObject private var pinStore = PinStore()
+    @StateObject private var sharingService = SharingService()
 
     @Environment(\.scenePhase) private var scenePhase
 
@@ -38,6 +39,7 @@ struct NeutrinoNotesApp: App {
                 .environmentObject(versionHistoryService)
                 .environmentObject(tagsService)
                 .environmentObject(pinStore)
+                .environmentObject(sharingService)
                 .task {
                     notesDriveService.authService = authService
                     notesDriveService.offlineStore = offlineStore
@@ -46,6 +48,8 @@ struct NeutrinoNotesApp: App {
                     versionHistoryService.authService = authService
                     versionHistoryService.noteContentService = noteContentService
                     tagsService.authService = authService
+                    sharingService.authService = authService
+                    sharingService.noteContentService = noteContentService
                     syncEngine.start()
                 }
         }
