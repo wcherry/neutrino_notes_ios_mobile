@@ -11,8 +11,10 @@ struct NotesView: View {
     @EnvironmentObject var notesDriveService: NotesDriveService
     @EnvironmentObject var noteContentService: NoteContentService
     @EnvironmentObject var tagsService: TagsService
+    @EnvironmentObject var deepLinkRouter: DeepLinkRouter
     @State private var selectedSection: NotesSection = .myNotes
     @State private var path = NavigationPath()
+    @State private var linkError: String?
 
     /// Shared (Epic 22) and Tags (Epic 12) are feature-flagged, so the picker offers each only
     /// when its epic is enabled; My Notes and Trash have been there since Epic 4.
@@ -68,6 +70,41 @@ struct NotesView: View {
                 .onChange(of: selectedSection) { _ in
                     path = NavigationPath()
                 }
+                .task(id: deepLinkRouter.pending?.id) {
+                    await openPendingLink()
+                }
+                .alert("Couldn\u{2019}t Open Note", isPresented: Binding(
+                    get: { linkError != nil },
+                    set: { if !$0 { linkError = nil } }
+                )) {
+                    Button("OK") { linkError = nil }
+                } message: {
+                    Text(linkError ?? "")
+                }
+        }
+    }
+
+    // MARK: - Universal Links
+
+    /// Opens the note an inbound `…/open/note/<id>` link named.
+    ///
+    /// The editor is pushed onto the current stack rather than switching to My Notes first:
+    /// changing `selectedSection` resets `path` on the very next update, which would pop the note
+    /// straight back off. Whichever section is showing is only a backdrop for the pushed editor.
+    private func openPendingLink() async {
+        guard FeatureFlags.appLinks, FeatureFlags.markdownEditor else { return }
+        guard deepLinkRouter.pending != nil, let destination = deepLinkRouter.consume() else { return }
+
+        // A link can name a note in a folder this session never opened, or one shared by another
+        // account, so the cache is an optimisation and the server is the fallback.
+        if let cached = notesDriveService.item(id: destination.fileID), cached.type == .file {
+            path.append(cached)
+            return
+        }
+        do {
+            path.append(try await notesDriveService.fetchItem(id: destination.fileID))
+        } catch {
+            linkError = error.localizedDescription
         }
     }
 
@@ -111,4 +148,5 @@ struct NotesView: View {
         .environmentObject(NotesDriveService())
         .environmentObject(NoteContentService())
         .environmentObject(VersionHistoryService())
+        .environmentObject(DeepLinkRouter())
 }

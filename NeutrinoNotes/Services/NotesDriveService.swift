@@ -115,6 +115,27 @@ final class NotesDriveService: ObservableObject {
             ?? trashItems.first(where: { $0.id == id })
     }
 
+    // MARK: - Single Item
+
+    /// Fetches one note's metadata straight from the server.
+    ///
+    /// `item(id:)` reads the listings this session happens to have loaded, which is enough while
+    /// the user is browsing. A Universal Link is not: it names a note that may sit in a folder
+    /// nobody has opened, or one shared by another account, so there is no listing to read it out
+    /// of.
+    ///
+    /// Throws `NotesDriveError.serverError(415)` for a file that is not a note — the app link
+    /// vocabulary is per-app, so a `/open/note/…` link pointing at a spreadsheet is a malformed
+    /// link rather than something to render badly.
+    func fetchItem(id: String) async throws -> NoteItem {
+        let file: APIFileResponse = try await get("/api/v1/drive/files/\(id)/metadata")
+        guard NeutrinoAppLink.kind(forMIME: file.mimeType) == .note else {
+            logger.error("fetchItem: \(id, privacy: .public) is \(file.mimeType, privacy: .public), not a note")
+            throw NotesDriveError.serverError(statusCode: 415)
+        }
+        return NoteItem(file: file)
+    }
+
     // MARK: - Load
 
     func loadSection(_ section: NotesSection, parentID: String?) async {

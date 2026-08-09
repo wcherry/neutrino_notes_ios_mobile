@@ -13,6 +13,7 @@ struct NeutrinoNotesApp: App {
     @StateObject private var pinStore = PinStore()
     @StateObject private var sharingService = SharingService()
     @StateObject private var appLockService = AppLockService()
+    @StateObject private var deepLinkRouter = DeepLinkRouter()
 
     @Environment(\.scenePhase) private var scenePhase
 
@@ -42,6 +43,11 @@ struct NeutrinoNotesApp: App {
                 .environmentObject(pinStore)
                 .environmentObject(sharingService)
                 .environmentObject(appLockService)
+                .environmentObject(deepLinkRouter)
+                .onOpenURL { url in
+                    guard FeatureFlags.appLinks else { return }
+                    deepLinkRouter.handle(url)
+                }
                 .task {
                     notesDriveService.authService = authService
                     notesDriveService.offlineStore = offlineStore

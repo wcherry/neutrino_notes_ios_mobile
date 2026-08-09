@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject var offlineStore: OfflineStore
+    @EnvironmentObject var deepLinkRouter: DeepLinkRouter
     @State private var selectedTab = 0
 
     var body: some View {
@@ -45,6 +46,12 @@ struct ContentView: View {
             }
             .tag(4)
         }
+        // A note link has to land on the Notes tab whatever the user was last looking at —
+        // NotesView owns the navigation stack the editor is pushed onto, and it only consumes the
+        // pending link once it is on screen.
+        .onChange(of: deepLinkRouter.pending?.id) { pendingID in
+            if pendingID != nil { selectedTab = 0 }
+        }
     }
 
     // MARK: - Offline Badge
@@ -69,4 +76,5 @@ struct ContentView: View {
         .environmentObject(PinStore())
         .environmentObject(SharingService())
         .environmentObject(AppLockService())
+        .environmentObject(DeepLinkRouter())
 }
