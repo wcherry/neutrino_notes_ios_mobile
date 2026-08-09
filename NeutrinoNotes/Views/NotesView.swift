@@ -15,6 +15,9 @@ struct NotesView: View {
     @State private var selectedSection: NotesSection = .myNotes
     @State private var path = NavigationPath()
     @State private var linkError: String?
+    /// Epic 20: pushes the note behind a tapped `[[wiki link]]` onto *this* stack. One per stack,
+    /// so a link followed here doesn't also push onto Recents or Favorites.
+    @StateObject private var noteRouter = NoteRouter()
 
     /// Shared (Epic 22) and Tags (Epic 12) are feature-flagged, so the picker offers each only
     /// when its epic is enabled; My Notes and Trash have been there since Epic 4.
@@ -73,6 +76,7 @@ struct NotesView: View {
                 .task(id: deepLinkRouter.pending?.id) {
                     await openPendingLink()
                 }
+                .noteRouting(noteRouter, path: $path)
                 .alert("Couldn\u{2019}t Open Note", isPresented: Binding(
                     get: { linkError != nil },
                     set: { if !$0 { linkError = nil } }

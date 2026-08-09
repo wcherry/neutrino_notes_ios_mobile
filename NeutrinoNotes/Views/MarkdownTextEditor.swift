@@ -48,6 +48,7 @@ struct MarkdownTextEditor: UIViewRepresentable {
             // The text under any open menu has just been replaced wholesale, so the command that
             // opened it is gone too.
             controller.endSlashCommand()
+            controller.endWikiLink()
         }
         textView.isEditable = isEditable
         textView.textColor = isEditable ? .label : .secondaryLabel
@@ -79,18 +80,23 @@ struct MarkdownTextEditor: UIViewRepresentable {
         func textViewDidChange(_ textView: UITextView) {
             text.wrappedValue = textView.text
             refreshSlashCommand(in: textView, canOpen: true)
+            refreshWikiLink(in: textView, canOpen: true)
         }
 
-        /// A moved caret can follow a `/` command it is still typing, but never starts one — so
-        /// tapping into a line that happens to begin with a slash doesn't spring the menu open.
+        /// A moved caret can follow a `/` command or a `[[` link it is still typing, but never
+        /// starts one — so tapping into a line that happens to begin with a slash, or landing
+        /// inside a link written earlier, doesn't spring a menu open.
         func textViewDidChangeSelection(_ textView: UITextView) {
             refreshSlashCommand(in: textView, canOpen: false)
+            refreshWikiLink(in: textView, canOpen: false)
         }
 
-        /// Keeps the menu with its caret when the note scrolls under it.
+        /// Keeps whichever menu is open with its caret when the note scrolls under it.
         func scrollViewDidScroll(_ scrollView: UIScrollView) {
-            guard controller.slashCommand != nil, let textView = controller.textView else { return }
-            controller.moveSlashCommandMenu(to: caretRect(in: textView))
+            guard let textView = controller.textView else { return }
+            let caret = caretRect(in: textView)
+            if controller.slashCommand != nil { controller.moveSlashCommandMenu(to: caret) }
+            if controller.wikiLink != nil { controller.moveWikiLinkMenu(to: caret) }
         }
 
         /// Intercepts Return so a checklist can carry itself on to the next line. Every other
@@ -131,6 +137,45 @@ struct MarkdownTextEditor: UIViewRepresentable {
             }
             controller.showSlashCommandMenu(for: token, at: caretRect(in: textView))
         }
+
+        // MARK: - Wiki Links
+
+        /// Opens, narrows, or closes the note picker after the text or the caret has moved.
+        ///
+        /// Mirrors `refreshSlashCommand`; the difference is only which token it looks for. A link
+        /// the user finished typing by hand (`[[Done]]`) yields no token, so the menu closes on the
+        /// closing brackets rather than lingering.
+        func refreshWikiLink(in textView: UITextView, canOpen: Bool) {
+            guard FeatureFlags.noteLinks else { return }
+            let openLink = controller.wikiLink
+            guard canOpen || openLink != nil else { return }
+
+            let caret = textView.selectedRange
+            guard caret.length == 0,
+                  let token = WikiLink.token(in: textView.text as NSString, caret: caret.location),
+                  canOpen || token.range.location == openLink?.range.location
+            else {
+                controller.endWikiLink()
+                return
+            }
+            controller.showWikiLinkMenu(for: token, at: caretRect(in: textView))
+        }
+
+        /// Completes the half-typed link with `title`, closing the brackets and leaving the caret
+        /// after them so typing carries straight on.
+        func completeWikiLink(with title: String) {
+            guard let textView = controller.textView, let link = controller.wikiLink else { return }
+
+            let completed = "[[\(title)]]"
+            replace(link.range, with: completed, in: textView)
+            if let caret = textView.position(from: textView.beginningOfDocument,
+                                             offset: link.range.location + (completed as NSString).length) {
+                textView.selectedTextRange = textView.textRange(from: caret, to: caret)
+            }
+            controller.endWikiLink()
+        }
+
+        // MARK: - Slash Commands (continued)
 
         /// Writes a chosen format over the `/` command that opened the menu, and leaves the caret
         /// where the user's own text goes — inside `**|**`, after `# `.
@@ -180,6 +225,9 @@ final class MarkdownTextEditorController: ObservableObject {
     /// The `/` command being typed, or `nil` when no menu should be on screen.
     @Published private(set) var slashCommand: SlashCommand?
 
+    /// The `[[` link being typed, or `nil` when no note picker should be on screen.
+    @Published private(set) var wikiLink: WikiLinkInProgress?
+
     /// Where to put the format menu, and what to put in it.
     struct SlashCommand: Equatable {
         /// What has been typed after the slash. The menu filters itself on this.
@@ -187,6 +235,15 @@ final class MarkdownTextEditorController: ObservableObject {
         /// The caret's line, in the editor's own coordinates, for the menu to sit next to.
         let caretRect: CGRect
         /// The `/query` text a chosen format replaces.
+        fileprivate let range: NSRange
+    }
+
+    /// Where to put the note picker, and what to filter it by.
+    struct WikiLinkInProgress: Equatable {
+        /// What has been typed since the `[[`.
+        let query: String
+        let caretRect: CGRect
+        /// The `[[query` text a chosen note replaces, brackets included.
         fileprivate let range: NSRange
     }
 
@@ -243,5 +300,30 @@ final class MarkdownTextEditorController: ObservableObject {
     fileprivate func endSlashCommand() {
         guard slashCommand != nil else { return }
         slashCommand = nil
+    }
+
+    // MARK: - Wiki Links
+
+    /// Writes `[[title]]` over the half-typed link that opened the picker.
+    func completeWikiLink(with title: String) {
+        coordinator?.completeWikiLink(with: title)
+    }
+
+    fileprivate func showWikiLinkMenu(for token: WikiLink.Token, at caretRect: CGRect) {
+        let link = WikiLinkInProgress(query: token.query, caretRect: caretRect, range: token.range)
+        guard link != wikiLink else { return }
+        wikiLink = link
+    }
+
+    fileprivate func moveWikiLinkMenu(to caretRect: CGRect) {
+        guard let wikiLink, wikiLink.caretRect != caretRect else { return }
+        self.wikiLink = WikiLinkInProgress(query: wikiLink.query,
+                                           caretRect: caretRect,
+                                           range: wikiLink.range)
+    }
+
+    fileprivate func endWikiLink() {
+        guard wikiLink != nil else { return }
+        wikiLink = nil
     }
 }

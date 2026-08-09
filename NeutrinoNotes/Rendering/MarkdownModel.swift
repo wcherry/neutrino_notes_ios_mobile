@@ -64,6 +64,10 @@ indirect enum MarkdownInline: Equatable {
     case strikethrough([MarkdownInline])
     case code(String)
     case link(inlines: [MarkdownInline], destination: String)
+    /// A `[[Another Note]]` link to another file in the drive. Carries the title only — whether it
+    /// resolves to something, and to what, is decided at render time against a `WikiLinkIndex`,
+    /// because the answer changes as notes are created and renamed without the text changing.
+    case wikiLink(title: String)
     case image(alt: String, source: String, title: String?)
     case footnoteReference(label: String, index: Int)
     case softBreak

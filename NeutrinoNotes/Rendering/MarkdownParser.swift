@@ -224,7 +224,60 @@ enum MarkdownParser {
     // MARK: - Inline Conversion
 
     private static func convertInlines(_ children: MarkupChildren, indexByLabel: [String: Int]) -> [MarkdownInline] {
-        children.compactMap { convertInline($0, indexByLabel: indexByLabel) }
+        var inlines: [MarkdownInline] = []
+        // Adjacent `Text` nodes are gathered before being split: cmark is free to break a literal
+        // run apart around brackets, and `[[` landing in a different node from the title it opens
+        // would hide the link from the splitter.
+        var run = ""
+
+        func flushRun() {
+            guard !run.isEmpty else { return }
+            inlines.append(contentsOf: splitWikiLinks(in: run))
+            run = ""
+        }
+
+        for markup in children {
+            if let text = markup as? Text {
+                run += text.string
+                continue
+            }
+            flushRun()
+            if let inline = convertInline(markup, indexByLabel: indexByLabel) {
+                inlines.append(inline)
+            }
+        }
+        flushRun()
+
+        return inlines
+    }
+
+    /// Splits a plain run of text into alternating text and `[[wiki link]]` inlines.
+    ///
+    /// Done here, on `Text` nodes, rather than by rewriting the source the way footnotes are: cmark
+    /// hands inline code and fenced blocks over as `InlineCode`/`CodeBlock`, which this never sees,
+    /// so ``[[not a link]]`` inside backticks stays literal for free.
+    private static func splitWikiLinks(in string: String) -> [MarkdownInline] {
+        // With the feature off, `[[Title]]` is nothing special and has to render as the literal
+        // text the author typed — not as a bracket-less link to nowhere.
+        guard FeatureFlags.noteLinks else { return [.text(string)] }
+        let matches = WikiLink.matches(in: string)
+        guard !matches.isEmpty else { return [.text(string)] }
+
+        let nsString = string as NSString
+        var inlines: [MarkdownInline] = []
+        var cursor = 0
+        for match in matches {
+            if match.range.location > cursor {
+                let text = nsString.substring(with: NSRange(location: cursor, length: match.range.location - cursor))
+                inlines.append(.text(text))
+            }
+            inlines.append(.wikiLink(title: match.title))
+            cursor = match.range.location + match.range.length
+        }
+        if cursor < nsString.length {
+            inlines.append(.text(nsString.substring(from: cursor)))
+        }
+        return inlines
     }
 
     private static func convertInline(_ markup: Markup, indexByLabel: [String: Int]) -> MarkdownInline? {

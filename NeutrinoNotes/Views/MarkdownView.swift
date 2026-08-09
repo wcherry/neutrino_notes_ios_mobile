@@ -1,5 +1,25 @@
 import SwiftUI
 
+// MARK: - Wiki Link Environment
+
+private struct WikiLinkResolvedTitlesKey: EnvironmentKey {
+    static let defaultValue: Set<String> = []
+}
+
+extension EnvironmentValues {
+    /// The `[[titles]]` in the document being rendered that point at a note this device can find,
+    /// as `WikiLink.indexKey` spells them.
+    ///
+    /// Passed through the environment rather than as a parameter because every nested renderer
+    /// needs it and none of them decide it — threading it through `MarkdownBlockView`,
+    /// `MarkdownListView`, `MarkdownTableView` and back out again would be four signatures changed
+    /// to carry one constant.
+    var wikiLinkResolvedTitles: Set<String> {
+        get { self[WikiLinkResolvedTitlesKey.self] }
+        set { self[WikiLinkResolvedTitlesKey.self] = newValue }
+    }
+}
+
 // MARK: - MarkdownView
 
 /// Read-only, scrollable renderer for a Markdown string. Parses `text` with
@@ -10,11 +30,34 @@ struct MarkdownView: View {
 
     let text: String
 
+    /// What this device knows about the notes a `[[wiki link]]` might name. Decides which links are
+    /// drawn live and which are drawn broken; an empty index draws them all broken, which is the
+    /// right answer for a preview or a screen with no listings loaded.
+    var wikiLinkIndex = WikiLinkIndex()
+    /// Files that link *to* this one, rendered as a "Linked from" section under the note. Empty
+    /// hides the section entirely — an unlinked note shouldn't pay for a heading.
+    var backlinks: [FileLink] = []
+    /// Called with the raw title when a wiki link is tapped, resolved or not. Absent means wiki
+    /// links render but do nothing, which is what a read-only preview wants.
+    var onWikiLinkTap: ((String) -> Void)?
+    var onBacklinkTap: ((FileLink) -> Void)?
+
     @Namespace private var footnoteNamespace
     @State private var footnoteScrollTarget: String?
 
     private var document: MarkdownDocumentModel {
         MarkdownParser.parse(text)
+    }
+
+    /// The index keys of the titles in this note that resolve to something. Computed once per body
+    /// and handed down through the environment so every nested renderer agrees.
+    private var resolvedTitles: Set<String> {
+        guard FeatureFlags.noteLinks else { return [] }
+        return Set(
+            WikiLink.titles(in: text)
+                .map(WikiLink.indexKey(for:))
+                .filter { wikiLinkIndex.item(for: $0) != nil }
+        )
     }
 
     var body: some View {
@@ -28,10 +71,20 @@ struct MarkdownView: View {
                     if !document.footnotes.isEmpty {
                         footnotesSection
                     }
+
+                    if FeatureFlags.noteLinks && !backlinks.isEmpty {
+                        backlinksSection
+                    }
                 }
                 .padding()
             }
+            .environment(\.wikiLinkResolvedTitles, resolvedTitles)
             .environment(\.openURL, OpenURLAction { url in
+                if let title = MarkdownInlineRenderer.wikiLinkTitle(from: url) {
+                    guard let onWikiLinkTap else { return .handled }
+                    onWikiLinkTap(title)
+                    return .handled
+                }
                 guard url.scheme == "nn-footnote" else {
                     return .systemAction
                 }
@@ -41,6 +94,40 @@ struct MarkdownView: View {
                 }
                 return .handled
             })
+        }
+    }
+
+    // MARK: - Backlinks
+
+    /// "Linked from" — the other side of the link graph, and the only place it is visible.
+    ///
+    /// Read access is all the endpoint needs, so this appears on a note shared with this account
+    /// too. Rows for other file types (a doc that links here) are shown rather than filtered: the
+    /// graph is drive-wide, and hiding half of it would make a note look less connected than it is.
+    private var backlinksSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Divider()
+                .padding(.vertical, 4)
+            Text("Linked from")
+                .font(.headline)
+            ForEach(backlinks) { link in
+                Button {
+                    onBacklinkTap?(link)
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: link.systemImage)
+                            .foregroundStyle(.secondary)
+                            .frame(width: 20)
+                        Text(link.displayTitle)
+                            .font(.subheadline)
+                            .multilineTextAlignment(.leading)
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(onBacklinkTap == nil)
+            }
         }
     }
 
@@ -57,7 +144,9 @@ struct MarkdownView: View {
                     Text("\(footnote.index).")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
-                    Text(MarkdownInlineRenderer.attributedString(for: footnote.content, footnotes: document.footnotes))
+                    Text(MarkdownInlineRenderer.attributedString(for: footnote.content,
+                                                                 footnotes: document.footnotes,
+                                                                 resolvedTitles: resolvedTitles))
                         .font(.footnote)
                 }
                 .id("footnote-\(footnote.id)")
@@ -73,10 +162,13 @@ struct MarkdownBlockView: View {
     let block: MarkdownBlock
     let footnotes: [MarkdownFootnote]
 
+    @Environment(\.wikiLinkResolvedTitles) private var resolvedTitles
+
     var body: some View {
         switch block {
         case .heading(let level, let inlines):
-            Text(MarkdownInlineRenderer.attributedString(for: inlines, footnotes: footnotes))
+            Text(MarkdownInlineRenderer.attributedString(for: inlines, footnotes: footnotes,
+                                                         resolvedTitles: resolvedTitles))
                 .font(headingFont(for: level))
 
         case .paragraph(let inlines):
@@ -107,7 +199,8 @@ struct MarkdownBlockView: View {
         if inlines.count == 1, case let .image(alt, source, _) = inlines[0] {
             MarkdownImageView(alt: alt, source: source)
         } else {
-            Text(MarkdownInlineRenderer.attributedString(for: inlines, footnotes: footnotes))
+            Text(MarkdownInlineRenderer.attributedString(for: inlines, footnotes: footnotes,
+                                                         resolvedTitles: resolvedTitles))
         }
     }
 
@@ -195,12 +288,15 @@ struct MarkdownTableView: View {
     let table: MarkdownTable
     let footnotes: [MarkdownFootnote]
 
+    @Environment(\.wikiLinkResolvedTitles) private var resolvedTitles
+
     var body: some View {
         ScrollView(.horizontal, showsIndicators: true) {
             Grid(alignment: .topLeading, horizontalSpacing: 12, verticalSpacing: 8) {
                 GridRow {
                     ForEach(Array(table.header.enumerated()), id: \.offset) { index, cell in
-                        Text(MarkdownInlineRenderer.attributedString(for: cell, footnotes: footnotes))
+                        Text(MarkdownInlineRenderer.attributedString(for: cell, footnotes: footnotes,
+                                                                     resolvedTitles: resolvedTitles))
                             .font(.subheadline.bold())
                             .gridColumnAlignment(alignment(for: index))
                     }
@@ -209,7 +305,8 @@ struct MarkdownTableView: View {
                 ForEach(Array(table.rows.enumerated()), id: \.offset) { _, row in
                     GridRow {
                         ForEach(Array(row.enumerated()), id: \.offset) { index, cell in
-                            Text(MarkdownInlineRenderer.attributedString(for: cell, footnotes: footnotes))
+                            Text(MarkdownInlineRenderer.attributedString(for: cell, footnotes: footnotes,
+                                                                         resolvedTitles: resolvedTitles))
                                 .gridColumnAlignment(alignment(for: index))
                         }
                     }

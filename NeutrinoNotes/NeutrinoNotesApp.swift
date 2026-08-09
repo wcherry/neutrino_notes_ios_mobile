@@ -14,6 +14,7 @@ struct NeutrinoNotesApp: App {
     @StateObject private var sharingService = SharingService()
     @StateObject private var appLockService = AppLockService()
     @StateObject private var deepLinkRouter = DeepLinkRouter()
+    @StateObject private var linksService = LinksService()
 
     @Environment(\.scenePhase) private var scenePhase
 
@@ -44,6 +45,7 @@ struct NeutrinoNotesApp: App {
                 .environmentObject(sharingService)
                 .environmentObject(appLockService)
                 .environmentObject(deepLinkRouter)
+                .environmentObject(linksService)
                 .onOpenURL { url in
                     guard FeatureFlags.appLinks else { return }
                     deepLinkRouter.handle(url)
@@ -58,6 +60,10 @@ struct NeutrinoNotesApp: App {
                     tagsService.authService = authService
                     sharingService.authService = authService
                     sharingService.noteContentService = noteContentService
+                    linksService.authService = authService
+                    // Epic 20: a queued offline edit updates the link graph when it finally
+                    // uploads, not when it was typed.
+                    syncEngine.attach(links: linksService)
                     syncEngine.start()
                 }
         }

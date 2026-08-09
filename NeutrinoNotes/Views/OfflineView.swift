@@ -31,6 +31,12 @@ struct OfflineView: View {
             }
         }
         .navigationTitle("Offline")
+        // The rows above push the editor with their own destination closures; this is for notes
+        // pushed *programmatically* — following a `[[wiki link]]` out of an editor opened here
+        // (see `NoteRouter`), which appends to this stack's path and needs a destination for it.
+        .navigationDestination(for: NoteItem.self) { item in
+            NoteEditorView(item: item)
+        }
     }
 
     // MARK: - List

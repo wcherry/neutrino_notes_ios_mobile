@@ -230,6 +230,91 @@ final class NotesDriveService: ObservableObject {
         isLoading = false
     }
 
+    // MARK: - Epic 20: Wiki-Link Index
+
+    /// Every note this account owns, wherever it lives — the raw material for resolving a
+    /// `[[title]]` on the device. Kept apart from `allItems`, which is a browser cache of the
+    /// folders somebody actually opened.
+    @Published private(set) var indexedNotes: [NoteItem] = []
+
+    /// When `indexedNotes` was last rebuilt, so opening five notes in a row doesn't walk the drive
+    /// five times.
+    private var noteIndexLoadedAt: Date?
+
+    /// How long an index is considered fresh enough to reuse.
+    private static let noteIndexTTL: TimeInterval = 60
+
+    /// A ceiling on the walk below, so a pathological drive can't turn opening a note into
+    /// hundreds of requests. Hitting it is logged rather than passed over in silence: the result
+    /// is a partial index, and a link that quietly fails to resolve is exactly the failure this
+    /// index exists to prevent.
+    private static let noteIndexFolderBudget = 200
+
+    /// Everything a `[[title]]` could name: the indexed notes, plus notes this session has seen
+    /// through listings the index doesn't cover (Recents, Favorites, and notes other people
+    /// shared, which are owned elsewhere and so are absent from the walk).
+    var linkableNotes: [NoteItem] {
+        var byID: [String: NoteItem] = [:]
+        for note in indexedNotes + allItems + recentItems + starredItems + sharedItems
+        where note.type == .file && !note.isTrashed {
+            byID[note.id] = note
+        }
+        return Array(byID.values)
+    }
+
+    /// Rebuilds `indexedNotes` by walking the folder tree.
+    ///
+    /// There is no whole-drive listing to ask for any more: the backend's listing redesign
+    /// (`136efe4`) folded the root into `/folders/{id}` and dropped the typed whole-drive route
+    /// that used to answer this in one request. So the walk is the drive's own shape — one
+    /// `GET /api/v1/drive/folders/{id}?type=note` per folder, which returns that folder's notes
+    /// and its subfolders whatever those contain.
+    ///
+    /// Failures are swallowed on purpose. This feeds link rendering and an autocomplete menu; a
+    /// folder that doesn't answer costs some links their highlight, which is not worth an error in
+    /// front of somebody who is trying to write.
+    func loadNoteIndex(force: Bool = false) async {
+        if !force, let loadedAt = noteIndexLoadedAt, Date().timeIntervalSince(loadedAt) < Self.noteIndexTTL {
+            return
+        }
+        guard let rootID = currentUserId() else { return }
+
+        var notes: [NoteItem] = []
+        var pending: [String] = [rootID]
+        var visited: Set<String> = [rootID]
+        var requests = 0
+        var truncated = false
+
+        while !pending.isEmpty {
+            guard requests < Self.noteIndexFolderBudget else {
+                truncated = true
+                break
+            }
+            let folderID = pending.removeFirst()
+            requests += 1
+            guard let response: APIFolderContentsResponse =
+                    try? await get("/api/v1/drive/folders/\(folderID)?type=note") else { continue }
+
+            notes.append(contentsOf: response.files.map { NoteItem(file: $0) })
+            for folder in response.folders where visited.insert(folder.id).inserted {
+                pending.append(folder.id)
+            }
+        }
+
+        if truncated {
+            logger.error("loadNoteIndex: stopped at \(Self.noteIndexFolderBudget) folders — index is partial, \(pending.count) folder(s) unvisited")
+        }
+        indexedNotes = notes
+        noteIndexLoadedAt = Date()
+        logger.debug("loadNoteIndex: \(notes.count) note(s) across \(requests) folder listing(s)")
+    }
+
+    /// Forces the next `loadNoteIndex` to do the walk — after a note is created, renamed, or
+    /// trashed, since all three change what a `[[title]]` resolves to.
+    func invalidateNoteIndex() {
+        noteIndexLoadedAt = nil
+    }
+
     // MARK: - Mutations (fire-and-forget, optimistic)
 
     /// Stars or unstars an item — the Favorites model, shared with the web app, which stores the
@@ -321,6 +406,9 @@ final class NotesDriveService: ObservableObject {
         logger.debug("rename: id=\(itemID, privacy: .public) from=\(old, privacy: .public) to=\(newName, privacy: .public)")
         allItems[idx].name = newName
         allItems[idx].modifiedAt = Date()
+        // A note's name *is* its wiki-link title, so a rename silently changes which `[[links]]`
+        // resolve — the index has to be rebuilt rather than aged out.
+        invalidateNoteIndex()
         Task {
             do {
                 let updatedAt: Date
@@ -349,6 +437,9 @@ final class NotesDriveService: ObservableObject {
 
     /// Moves the item to Trash (first call) or permanently deletes it (if already trashed).
     func delete(itemID: String) {
+        // Trashing or deleting a note takes its title out of circulation: links to it stop
+        // resolving, here and server-side.
+        invalidateNoteIndex()
         if let idx = trashItems.firstIndex(where: { $0.id == itemID }) {
             let item = trashItems.remove(at: idx)
             logger.debug("delete (permanent): id=\(itemID, privacy: .public) name=\(item.name, privacy: .public)")
@@ -467,6 +558,8 @@ final class NotesDriveService: ObservableObject {
     /// the new file in allItems.
     func noteWasCreated(_ item: NoteItem) {
         allItems.append(item)
+        // The new note is immediately linkable by name, so don't wait out the index's TTL.
+        indexedNotes.append(item)
         logger.debug("noteWasCreated: id=\(item.id, privacy: .public) name=\(item.name, privacy: .public)")
     }
 
