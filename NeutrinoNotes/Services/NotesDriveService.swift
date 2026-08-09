@@ -25,6 +25,11 @@ enum NotesDriveError: LocalizedError {
 // Drive folder/file/trash APIs — the Notes app has no backend of its own. Every listing passes
 // `type=note`, so the server returns only Drive's note MIME type; folders come back unfiltered
 // because a folder may hold notes whatever else is in it.
+//
+// There is no whole-drive `type=` listing any more — `type` always scopes to one folder (or the
+// `/starred`, `/recent`, `/trash`, `/shared-with-me` views, which support it directly). A user's
+// root folder has no id of its own; `currentUserId()` reads it from the access token's `sub`
+// claim, mirroring `GET /api/v1/auth/me`.
 @MainActor
 final class NotesDriveService: ObservableObject {
 
@@ -34,10 +39,10 @@ final class NotesDriveService: ObservableObject {
     @Published private(set) var allItems: [NoteItem] = []
     /// Items from GET /api/v1/drive/trash, filtered to folders and Markdown files.
     @Published private(set) var trashItems: [NoteItem] = []
-    /// Epic 12: starred folders and notes from GET /api/v1/drive?view=starred, most recently
+    /// Epic 12: starred folders and notes from GET /api/v1/drive/starred, most recently
     /// starred first (the server orders by `starred_at` descending).
     @Published private(set) var starredItems: [NoteItem] = []
-    /// Epic 12: most recently modified notes from GET /api/v1/drive?view=recent.
+    /// Epic 12: most recently modified notes from GET /api/v1/drive/recent.
     @Published private(set) var recentItems: [NoteItem] = []
     /// Epic 22: folders and notes other people have shared with this account, from
     /// GET /api/v1/drive/shared-with-me. Every item here carries `isShared`.
@@ -149,7 +154,8 @@ final class NotesDriveService: ObservableObject {
                 if let id = parentID {
                     response = try await get("/api/v1/drive/folders/\(id)?type=note")
                 } else {
-                    response = try await get("/api/v1/drive?type=note")
+                    guard let rootId = currentUserId() else { throw NotesDriveError.notAuthenticated }
+                    response = try await get("/api/v1/drive/folders/\(rootId)?type=note")
                 }
                 let folders = response.folders.map { NoteItem(folder: $0) }
                 let files = response.files.map { NoteItem(file: $0) }
@@ -193,7 +199,7 @@ final class NotesDriveService: ObservableObject {
         isLoading = true
         error = nil
         do {
-            let response: APIFolderContentsResponse = try await get("/api/v1/drive?view=starred&type=note")
+            let response: APIFolderContentsResponse = try await get("/api/v1/drive/starred?type=note")
             let folders = response.folders.map { NoteItem(folder: $0) }
             let files = response.files.map { NoteItem(file: $0) }
             starredItems = folders + files
@@ -214,7 +220,7 @@ final class NotesDriveService: ObservableObject {
         isLoading = true
         error = nil
         do {
-            let response: APIFolderContentsResponse = try await get("/api/v1/drive?view=recent&type=note&limit=\(limit)")
+            let response: APIFolderContentsResponse = try await get("/api/v1/drive/recent?type=note&limit=\(limit)")
             recentItems = response.files.map { NoteItem(file: $0) }
             logger.debug("loadRecents: \(self.recentItems.count) recent notes")
         } catch {
@@ -499,6 +505,23 @@ final class NotesDriveService: ObservableObject {
         allItems.firstIndex(where: { $0.id == itemID })
     }
 
+    /// The signed-in user's id, read from the access token's `sub` claim rather than an extra
+    /// round trip to `/api/v1/auth/me` — a user's root folder id *is* their user id (see
+    /// `GET /api/v1/drive/folders/{id}`), so this is enough to address the drive root. Not a
+    /// verification of the token — the server still does that on every request.
+    private func currentUserId() -> String? {
+        guard let token = KeychainService.load(forKey: AuthService.accessTokenKey) else { return nil }
+        let segments = token.split(separator: ".")
+        guard segments.count > 1 else { return nil }
+        var payload = String(segments[1])
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        while payload.count % 4 != 0 { payload += "=" }
+        guard let data = Data(base64Encoded: payload),
+              let claims = try? JSONDecoder().decode(JWTClaims.self, from: data) else { return nil }
+        return claims.sub
+    }
+
     // MARK: - HTTP
 
     /// Builds a URLRequest without an Authorization header; `perform` injects it after refresh.
@@ -717,6 +740,11 @@ private extension NoteItem {
 private struct APIFolderContentsResponse: Decodable {
     let files: [APIFileResponse]
     let folders: [APIFolderResponse]
+}
+
+/// The subset of a JWT's claims `currentUserId()` needs.
+private struct JWTClaims: Decodable {
+    let sub: String
 }
 
 private struct APIFolderResponse: Decodable {
