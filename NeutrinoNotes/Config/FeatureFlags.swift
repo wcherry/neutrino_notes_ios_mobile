@@ -30,6 +30,14 @@ enum FeatureFlags {
     /// shared with you). When false, the Shared section is hidden and no share actions appear.
     static let sharing: Bool = true
 
+    /// Set to true to accept inbound `https://www.getneutrino.app/open/note/<id>` Universal Links,
+    /// which is how Neutrino Drive hands a note to this app.
+    ///
+    /// When false the link is ignored and the app opens on its usual screen. Turning it off does
+    /// not remove the `applinks:` entitlement — that is a bundle property, not a runtime one — so
+    /// iOS still launches the app with the URL; `onOpenURL` simply drops it.
+    static let appLinks: Bool = true
+
     /// Set to true to enable the Phase 8 app lock feature (Face ID / Touch ID, with device
     /// passcode fallback, in front of the app's content). When false, the Settings section is
     /// hidden and neither the lock screen nor the app-switcher privacy shield is ever presented,
