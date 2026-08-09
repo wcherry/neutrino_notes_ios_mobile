@@ -38,6 +38,24 @@ enum FeatureFlags {
     /// iOS still launches the app with the URL; `onOpenURL` simply drops it.
     static let appLinks: Bool = true
 
+    /// Set to true to enable the Epic 20 Internal Links feature: `[[wiki links]]` are parsed,
+    /// rendered as links, completed by a `[[` picker, sent to Drive's link graph after every save,
+    /// and the "Linked from" section appears under a note in Preview.
+    ///
+    /// Turning it off leaves `[[…]]` as literal text and stops the app calling
+    /// `PATCH /api/v1/links/{id}` — which is also the switch for the one disclosure this feature
+    /// makes, since that request carries link titles taken from an end-to-end-encrypted body in
+    /// the clear. See `agent_docs/plans/feature-note-links-and-collaboration.md` §3.2.
+    static let noteLinks: Bool = true
+
+    /// Set to true to keep an open note in step with edits made elsewhere, over Drive's file-events
+    /// relay (`GET /api/v1/files/{id}/ws`). The relay carries a signal only — never content — and
+    /// the note is re-read and decrypted locally when one arrives.
+    ///
+    /// When false no socket is opened and the editor behaves as it did before: a change made on
+    /// another device shows up the next time the note is opened.
+    static let liveFileEvents: Bool = true
+
     /// Set to true to enable the Phase 8 app lock feature (Face ID / Touch ID, with device
     /// passcode fallback, in front of the app's content). When false, the Settings section is
     /// hidden and neither the lock screen nor the app-switcher privacy shield is ever presented,

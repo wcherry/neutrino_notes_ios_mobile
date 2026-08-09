@@ -425,15 +425,28 @@ Rich table editing
 
 ⸻
 
-⬜ Epic 20 — Internal Links
+✅ Epic 20 — Internal Links
 
-Support wiki-style links.
+Wiki-style links — `[[Meeting Notes]]`, `[[Project Plan]]`, `[[Architecture]]` — against Drive's
+generic link graph (`/api/v1/links/…`), which notes, docs and sheets all share.
 
-Examples
-
-[[Meeting Notes]]
-[[Project Plan]]
-[[Architecture]]
+* ✅ Rendering — a link resolves to a note or renders as broken, and either way it is tappable;
+  `[[…]]` inside inline code or a fenced block stays literal
+* ✅ Following — a resolved note opens on the current tab's stack; a backlink from a *doc* hands off
+  to Neutrino Docs through the same Universal Link vocabulary the Drive hand-off uses
+* ✅ Creating by linking — tapping an unresolved link offers to create that note, in the same folder.
+  The web app leaves broken links inert; on a phone, sending someone off to find a New Note button
+  is the wrong answer
+* ✅ `[[` autocomplete over a device-side title index, rebuilt by walking the folder tree (the
+  backend has no whole-drive listing since the listing redesign, and no title search at all)
+* ✅ Backlinks — "Linked from" under a note in Preview, including links from other file types
+* ✅ Offline — a queued edit's links are published when `SyncEngine` uploads it, never before
+* ⚠️ **Note names carry `.md` here and don't on the web**, and the server matches titles exactly.
+  Both spellings are sent and indexed, so links resolve across the two clients; without that, every
+  link written on a phone would resolve to nothing, silently
+* ⚠️ The link titles travel to the server **in the clear** — text out of an encrypted body. Narrow
+  (a resolved title is a file name the server already holds) and deliberate; `FeatureFlags.noteLinks`
+  is the switch. See `agent_docs/plans/feature-note-links-and-collaboration.md` §3.2
 
 ⸻
 
@@ -486,6 +499,12 @@ encrypted while shared.
 * ⬜ Mentions
 * ⬜ Activity history
 
+The endpoints exist and work (`/files/{id}/comments`, `/files/{id}/activity`, `/notifications`), but
+two things need deciding before this can be planned, and neither is an implementation question:
+comment bodies are stored **plaintext** server-side — a comment on an E2EE note is note content —
+and `anchor_json` addresses the web's block model, which this app doesn't have. See
+`agent_docs/plans/feature-note-links-and-collaboration.md` §5.
+
 ⸻
 
 ⬜ Epic 24
@@ -495,6 +514,13 @@ Real-time collaboration
 * ⬜ Live cursors
 * ⬜ Live editing
 * ⬜ Conflict resolution
+* ✅ **Live updates** — an open note follows edits made elsewhere, over Drive's file-events relay
+  (`GET /api/v1/files/{id}/ws`). The relay carries a *signal* and never content, so the note is
+  re-read and decrypted on the device; that is the only shape live updates can take while the server
+  holds no key. Mid-edit the change is offered, never applied: replacing what somebody is typing is
+  the one thing an editor must not do. Not collaboration — no cursors, no merge, no CRDT (Docs has
+  one, `src/docs/collab/`, and it is deliberately a different mechanism). What is closed is "an edit
+  made in the web app shows up here without a manual refresh"
 
 ⸻
 

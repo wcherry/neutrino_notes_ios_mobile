@@ -15,6 +15,19 @@ protocol NoteSyncing: AnyObject {
 
 extension NoteContentService: NoteSyncing {}
 
+// MARK: - NoteLinkPublishing
+
+/// The slice of `LinksService` the drain loop needs, so the queue's link updates can be observed
+/// in a test without an HTTP stack behind them.
+@MainActor
+protocol NoteLinkPublishing: AnyObject {
+    /// `force` is spelled out rather than defaulted: a default argument doesn't satisfy a protocol
+    /// requirement, and the queue always wants the ordinary, deduplicated behaviour anyway.
+    func updateLinksIgnoringFailure(fileID: String, in text: String, force: Bool) async
+}
+
+extension LinksService: NoteLinkPublishing {}
+
 // MARK: - SyncEngine
 
 // Drains the offline edit queue whenever the device has connectivity.
@@ -43,6 +56,8 @@ final class SyncEngine: ObservableObject {
     private let store: OfflineStore
     private let monitor: NetworkMonitor
     private let content: any NoteSyncing
+    /// Epic 20. Optional because the queue is older than the link graph and works without it.
+    private weak var links: (any NoteLinkPublishing)?
 
     // MARK: - Private
 
@@ -56,10 +71,20 @@ final class SyncEngine: ObservableObject {
 
     // MARK: - Init
 
-    init(store: OfflineStore, monitor: NetworkMonitor, content: any NoteSyncing) {
+    init(store: OfflineStore,
+         monitor: NetworkMonitor,
+         content: any NoteSyncing,
+         links: (any NoteLinkPublishing)? = nil) {
         self.store = store
         self.monitor = monitor
         self.content = content
+        self.links = links
+    }
+
+    /// Set once at app launch, after the services exist. Separate from `init` because the two are
+    /// built in the same breath and neither can be the other's constructor argument.
+    func attach(links: any NoteLinkPublishing) {
+        self.links = links
     }
 
     // MARK: - Lifecycle
@@ -170,6 +195,13 @@ final class SyncEngine: ObservableObject {
                     let updatedAt = try await content.saveContent(text, for: item, dek: dek)
                     try store.clearPendingEdit(id: note.id, serverModifiedAt: updatedAt)
                     logger.debug("drain: uploaded id=\(note.id, privacy: .public)")
+                    // Epic 20: the content the graph describes is only now on the server, so this
+                    // is where an offline edit's `[[links]]` become real. The editor deliberately
+                    // skips this for a queued save for exactly that reason. Never throws — a
+                    // stale edge must not turn a successful upload into a sync failure.
+                    if FeatureFlags.noteLinks {
+                        await links?.updateLinksIgnoringFailure(fileID: note.id, in: text, force: false)
+                    }
                 }
             } catch {
                 let message = error.localizedDescription

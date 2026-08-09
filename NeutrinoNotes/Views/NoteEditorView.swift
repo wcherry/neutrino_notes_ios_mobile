@@ -20,6 +20,15 @@ struct NoteEditorView: View {
     @EnvironmentObject var versionHistoryService: VersionHistoryService
     @EnvironmentObject var pinStore: PinStore
     @EnvironmentObject var tagsService: TagsService
+    @EnvironmentObject var linksService: LinksService
+    /// Only for the file-events socket, which has to put a fresh token in its query string because
+    /// a WebSocket handshake cannot carry an Authorization header.
+    @EnvironmentObject var authService: AuthService
+    /// Pushes a note onto whichever navigation stack this editor was opened from — the editor
+    /// cannot push one itself. See `NoteRouter`.
+    @Environment(\.noteRouter) private var noteRouter
+    @Environment(\.openURL) private var openURL
+    @Environment(\.scenePhase) private var scenePhase
 
     // MARK: - State
 
@@ -47,6 +56,20 @@ struct NoteEditorView: View {
     /// nil until `GET /files/{id}/info` answers — and until then the editor stays read-only, so a
     /// viewer never types into a note they cannot save.
     @State private var sharedRole: ShareRole?
+
+    // MARK: - Epic 20 / 24 State
+
+    /// Epic 24: the file-events relay for this note. Owned by the editor, so it lives and dies with
+    /// the screen that cares about it.
+    @StateObject private var fileEvents = FileEventsClient()
+    /// Set when a peer reported a change that couldn't be applied because the user is mid-edit.
+    /// Drives the banner offering to reload; never applied behind their back.
+    @State private var hasUnappliedRemoteChange = false
+    /// Epic 20: the notes this device can resolve a `[[title]]` against.
+    @State private var wikiLinkIndex = WikiLinkIndex()
+    /// A tapped `[[title]]` that matches nothing yet, awaiting a decision to create it.
+    @State private var unresolvedLinkTitle: String?
+    @State private var linkError: String?
 
     private enum SaveStatus: Equatable {
         case idle
@@ -143,9 +166,44 @@ struct NoteEditorView: View {
         .task { await load() }
         .task { await loadTags() }
         .task { await loadRole() }
+        .task { await loadBacklinks() }
+        .task { await refreshWikiLinkIndex() }
         .onDisappear {
             pendingSaveTask?.cancel()
             if isDirty { Task { await save() } }
+            fileEvents.disconnect()
+        }
+        // iOS tears a WebSocket down in the background whatever this app thinks, and a socket that
+        // has quietly died looks exactly like one with nothing to report. Closing it deliberately
+        // and re-opening on return is the difference between "no news" and "no connection".
+        .onChange(of: scenePhase) { phase in
+            switch phase {
+            case .active:     fileEvents.resume()
+            case .background: fileEvents.suspend()
+            default:          break
+            }
+        }
+        .alert("Create Note", isPresented: Binding(
+            get: { unresolvedLinkTitle != nil },
+            set: { if !$0 { unresolvedLinkTitle = nil } }
+        )) {
+            Button("Cancel", role: .cancel) { unresolvedLinkTitle = nil }
+            Button("Create") {
+                if let title = unresolvedLinkTitle {
+                    unresolvedLinkTitle = nil
+                    Task { await createLinkedNote(titled: title) }
+                }
+            }
+        } message: {
+            Text("\u{201C}\(unresolvedLinkTitle ?? "")\u{201D} doesn\u{2019}t exist yet. Create it?")
+        }
+        .alert("Couldn\u{2019}t Open Link", isPresented: Binding(
+            get: { linkError != nil },
+            set: { if !$0 { linkError = nil } }
+        )) {
+            Button("OK") { linkError = nil }
+        } message: {
+            Text(linkError ?? "")
         }
         .sheet(isPresented: $showVersionHistory) {
             if let dek {
@@ -173,9 +231,16 @@ struct NoteEditorView: View {
         VStack(spacing: 0) {
             offlineBanner
             sharedBanner
+            remoteChangeBanner
             tagBar
             if isPreviewMode {
-                MarkdownView(text: text)
+                MarkdownView(
+                    text: text,
+                    wikiLinkIndex: wikiLinkIndex,
+                    backlinks: linksService.backlinks(for: item.id),
+                    onWikiLinkTap: { title in open(wikiLinkTitle: title) },
+                    onBacklinkTap: { link in open(backlink: link) }
+                )
             } else {
                 MarkdownTextEditor(text: $text, isEditable: !isReadOnly, controller: editorController)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -184,6 +249,10 @@ struct NoteEditorView: View {
                             // The overlay spans the whole editor to position the menu inside it,
                             // so it must never stand between a tap and the text.
                             .allowsHitTesting(editorController.slashCommand != nil)
+                    }
+                    .overlay(alignment: .topLeading) {
+                        wikiLinkMenu
+                            .allowsHitTesting(editorController.wikiLink != nil)
                     }
                     .onChange(of: text) { _ in scheduleAutosave() }
             }
@@ -209,6 +278,46 @@ struct NoteEditorView: View {
         }
     }
 
+    /// The note picker a `[[` opens. Offers the notes this device knows about, and — when the
+    /// query matches none of them and this session may write — creating one by that name.
+    ///
+    /// Creating from here is a deliberate departure from the web app, which renders an unmatched
+    /// link as inert text. Linking to a note that doesn't exist yet is how wiki links are actually
+    /// used, and a phone is the worst place to be sent hunting for a New Note button.
+    @ViewBuilder
+    private var wikiLinkMenu: some View {
+        GeometryReader { proxy in
+            if FeatureFlags.noteLinks, let link = editorController.wikiLink {
+                let suggestions = wikiLinkIndex.suggestions(for: link.query)
+                let createTitle = createTitle(for: link.query, suggestions: suggestions)
+                let rows = WikiLinkMenu.rowCount(suggestions: suggestions, createTitle: createTitle)
+                if rows > 0 {
+                    WikiLinkMenu(
+                        suggestions: suggestions,
+                        createTitle: createTitle,
+                        onSelect: { note in
+                            editorController.completeWikiLink(with: WikiLink.displayTitle(for: note.name))
+                        },
+                        onCreate: { title in
+                            editorController.completeWikiLink(with: title)
+                            Task { await createLinkedNote(titled: title, openIt: false) }
+                        }
+                    )
+                    .offset(wikiMenuOffset(caret: link.caretRect, rows: rows, in: proxy.size))
+                }
+            }
+        }
+    }
+
+    /// The name to offer creating for a half-typed link, or nil when there is nothing to offer:
+    /// an empty query, a query that already names a note exactly, or a session that can't write.
+    private func createTitle(for query: String, suggestions: [NoteItem]) -> String? {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !isReadOnly, networkMonitor.isOnline else { return nil }
+        guard wikiLinkIndex.item(for: trimmed) == nil else { return nil }
+        return trimmed
+    }
+
     /// Puts the menu just under the caret, and out of its own way: shifted left to stay on screen,
     /// and flipped above the line when there isn't room below it.
     private func menuOffset(caret: CGRect, rows: Int, in size: CGSize) -> CGSize {
@@ -217,6 +326,23 @@ struct NoteEditorView: View {
         let height = SlashCommandMenu.height(forRowCount: rows)
 
         let x = min(max(caret.minX, margin), max(margin, size.width - SlashCommandMenu.width - margin))
+
+        var y = caret.maxY + gap
+        if y + height > size.height - margin {
+            y = caret.minY - height - gap
+        }
+        y = min(max(y, margin), max(margin, size.height - height - margin))
+
+        return CGSize(width: x, height: y)
+    }
+
+    /// The same placement rule as `menuOffset`, for a menu of a different width and row count.
+    private func wikiMenuOffset(caret: CGRect, rows: Int, in size: CGSize) -> CGSize {
+        let margin: CGFloat = 8
+        let gap: CGFloat = 6
+        let height = WikiLinkMenu.height(forRowCount: rows)
+
+        let x = min(max(caret.minX, margin), max(margin, size.width - WikiLinkMenu.width - margin))
 
         var y = caret.maxY + gap
         if y + height > size.height - margin {
@@ -252,6 +378,32 @@ struct NoteEditorView: View {
             HStack(spacing: 6) {
                 Image(systemName: isReadOnly ? "eye" : "pencil")
                 Text(sharedBannerText)
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.bar)
+        }
+    }
+
+    /// Epic 24: somebody else changed this note while there were unsaved edits on screen.
+    ///
+    /// The change is never applied behind the user's back — their text is the thing they are
+    /// looking at, and replacing it mid-sentence to show somebody else's version is the one
+    /// unforgivable behaviour for an editor. The banner hands them the choice instead.
+    @ViewBuilder
+    private var remoteChangeBanner: some View {
+        if hasUnappliedRemoteChange {
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                Text("This note changed somewhere else.")
+                Spacer(minLength: 8)
+                Button("Reload") {
+                    Task { await reloadFromRemote() }
+                }
+                .font(.caption.weight(.semibold))
             }
             .font(.caption)
             .foregroundStyle(.secondary)
@@ -458,6 +610,28 @@ struct NoteEditorView: View {
         }
     }
 
+    /// Epic 20: what links *to* this note. Read access is enough, so it works on a shared note;
+    /// silent on failure, like the tag bar, because it decorates a screen someone came here to
+    /// write on. Skipped offline — there is nothing cached to show and nothing to be gained from
+    /// a request that will fail.
+    private func loadBacklinks() async {
+        guard FeatureFlags.noteLinks, networkMonitor.isOnline, !usingOfflineCopy else { return }
+        _ = try? await linksService.loadBacklinks(for: item.id)
+    }
+
+    /// Epic 20: the titles this device can resolve, for deciding which `[[links]]` are live and for
+    /// the `[[` picker.
+    ///
+    /// `GET /api/v1/drive?type=note` is a whole-drive note listing, so one request covers notes in
+    /// every folder — plus what the session already holds for notes other people have shared.
+    private func refreshWikiLinkIndex(force: Bool = false) async {
+        guard FeatureFlags.noteLinks else { return }
+        if networkMonitor.isOnline {
+            await notesDriveService.loadNoteIndex(force: force)
+        }
+        wikiLinkIndex = WikiLinkIndex(items: notesDriveService.linkableNotes)
+    }
+
     private func load() async {
         isLoading = true
         loadError = nil
@@ -492,6 +666,9 @@ struct NoteEditorView: View {
             }
         }
         isLoading = false
+        // Only now is it known whether this session is reading the server or the cache, which is
+        // what decides whether a relay socket makes any sense.
+        startFileEvents()
     }
 
     /// Reads this note's text and DEK out of the offline cache and marks the session offline-first.
@@ -562,10 +739,26 @@ struct NoteEditorView: View {
                 refreshOfflineCache(savedAt: updatedAt, dek: dek)
             }
             saveStatus = .saved
+            await publishSideEffects(of: text)
         } catch {
             saveStatus = .failed(error.localizedDescription)
             isDirty = true
         }
+    }
+
+    /// What follows a successful *online* save: update the link graph, and tell anyone else with
+    /// this note open that it moved.
+    ///
+    /// Deliberately after `saveStatus = .saved` and deliberately unable to change it. The content
+    /// is on the server by now; a links request that fails is a stale edge, not a lost note, and
+    /// the next save re-sends the whole set. Skipped for a read-only session, which the server
+    /// would refuse anyway, and for an offline save, whose content hasn't reached the server yet —
+    /// `SyncEngine` sends the links when it uploads the queued edit.
+    private func publishSideEffects(of savedText: String) async {
+        if FeatureFlags.noteLinks, !isReadOnly {
+            await linksService.updateLinksIgnoringFailure(fileID: item.id, in: savedText)
+        }
+        fileEvents.broadcastFileUpdate()
     }
 
     // MARK: - Version History
@@ -587,6 +780,9 @@ struct NoteEditorView: View {
                 refreshOfflineCache(savedAt: savedAt, dek: dek)
             }
             saveStatus = .saved
+            // A named version writes the note's current content too, so it moves the note and the
+            // link graph exactly as an autosave does.
+            await publishSideEffects(of: text)
         } catch {
             saveStatus = .failed(error.localizedDescription)
         }
@@ -604,6 +800,135 @@ struct NoteEditorView: View {
         if FeatureFlags.offlineEditing, offlineStore.isAvailableOffline(item.id), let dek {
             refreshOfflineCache(savedAt: modifiedAt, dek: dek)
         }
+    }
+
+    // MARK: - Epic 20: Following Links
+
+    /// Opens the note a tapped `[[title]]` names, or offers to create it.
+    ///
+    /// "Not in the index" is not the same as "doesn't exist": a note in a folder this session never
+    /// listed is invisible here even though the server would resolve the link. Refreshing the index
+    /// before giving up costs one listing and turns a wrong offer to create a duplicate into a
+    /// working link.
+    private func open(wikiLinkTitle title: String) {
+        guard FeatureFlags.noteLinks else { return }
+        if let note = wikiLinkIndex.item(for: title) {
+            noteRouter.open(note)
+            return
+        }
+        Task {
+            // Forced: the index was refreshed when this note opened, so an unforced call would sit
+            // inside its TTL and answer with the same miss — and then offer to create a note that
+            // already exists in a folder this session hasn't listed.
+            await refreshWikiLinkIndex(force: true)
+            if let note = wikiLinkIndex.item(for: title) {
+                noteRouter.open(note)
+            } else if isReadOnly || !networkMonitor.isOnline {
+                // Nothing to open and nothing this session may create.
+                linkError = "\u{201C}\(title)\u{201D} isn\u{2019}t a note you can open from here."
+            } else {
+                unresolvedLinkTitle = title
+            }
+        }
+    }
+
+    /// Opens a backlink: a note in this app, anything else in the app that owns it.
+    ///
+    /// The link graph is drive-wide, so a note can be linked from a doc or a sheet. Handing those
+    /// to `NeutrinoAppLink` is the same routing the Universal Links work already built — Neutrino
+    /// Docs takes the link if it is installed, and the web app takes it otherwise.
+    private func open(backlink link: FileLink) {
+        if link.isNote {
+            Task {
+                if let note = notesDriveService.item(id: link.id) {
+                    noteRouter.open(note)
+                    return
+                }
+                do {
+                    noteRouter.open(try await notesDriveService.fetchItem(id: link.id))
+                } catch {
+                    linkError = error.localizedDescription
+                }
+            }
+            return
+        }
+
+        guard let kind = link.kind, let url = NeutrinoAppLink.url(kind: kind, fileID: link.id) else {
+            linkError = "\u{201C}\(link.displayTitle)\u{201D} can\u{2019}t be opened from Notes."
+            return
+        }
+        openURL(url)
+    }
+
+    /// Creates the note a link points at and, unless the caller is mid-typing, opens it.
+    ///
+    /// The new note goes in the same folder as this one — a link written here almost always belongs
+    /// with it, and the alternative (the drive root) scatters notes made this way. The name gets the
+    /// same `.md` this app puts on every note it creates; the link graph sends both spellings, so
+    /// the link resolves either way.
+    private func createLinkedNote(titled title: String, openIt: Bool = true) async {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !isReadOnly, networkMonitor.isOnline else { return }
+
+        let name = trimmed.lowercased().hasSuffix(WikiLink.markdownExtension)
+            ? trimmed
+            : trimmed + WikiLink.markdownExtension
+        // A shared note's `parentID` names a folder in *somebody else's* drive, which this account
+        // cannot write to — so a note linked from one is created at the root of this drive instead.
+        let parentID = item.isShared ? nil : item.parentID
+        do {
+            let created = try await noteContentService.createNote(name: name, parentID: parentID)
+            notesDriveService.noteWasCreated(created)
+            await refreshWikiLinkIndex()
+            // The link in this note now resolves even though its text never changed, so this is
+            // the one call that has to go out whether or not the titles look the same as last time.
+            if FeatureFlags.noteLinks {
+                await linksService.updateLinksIgnoringFailure(fileID: item.id, in: text, force: true)
+            }
+            if openIt {
+                noteRouter.open(created)
+            }
+        } catch {
+            linkError = error.localizedDescription
+        }
+    }
+
+    // MARK: - Epic 24: Live File Events
+
+    /// Opens the relay for this note, and says what to do when a peer rings the doorbell.
+    ///
+    /// Only ever for a note being read from the server: an offline session has no socket and
+    /// nothing to reconcile with.
+    private func startFileEvents() {
+        guard FeatureFlags.liveFileEvents, networkMonitor.isOnline, !usingOfflineCopy else { return }
+        fileEvents.authService = authService
+        fileEvents.onRemoteUpdate = { handleRemoteUpdate() }
+        fileEvents.connect(to: item.id)
+    }
+
+    /// A peer changed this note.
+    ///
+    /// Reload only when there is nothing of the user's to lose — no unsaved text, no save in
+    /// flight, and not mid-typing with an autosave pending. Otherwise raise the banner and let them
+    /// decide; whoever saves last still wins, exactly as before, but nobody's sentence disappears
+    /// as they write it.
+    private func handleRemoteUpdate() {
+        guard !isDirty, saveStatus != .saving else {
+            hasUnappliedRemoteChange = true
+            return
+        }
+        Task { await reloadFromRemote() }
+    }
+
+    /// Re-reads and decrypts the note from the server. The relay carries no content, so this is
+    /// where the change actually arrives.
+    private func reloadFromRemote() async {
+        pendingSaveTask?.cancel()
+        pendingSaveTask = nil
+        isDirty = false
+        hasUnappliedRemoteChange = false
+        await load()
+        await loadBacklinks()
     }
 
     /// After a successful online save, brings the offline cache up to the version just uploaded.
@@ -640,6 +965,8 @@ struct NoteEditorView: View {
         .environmentObject(VersionHistoryService())
         .environmentObject(TagsService())
         .environmentObject(PinStore())
-            .environmentObject(SharingService())
+        .environmentObject(SharingService())
+        .environmentObject(LinksService())
+        .environmentObject(AuthService())
     }
 }

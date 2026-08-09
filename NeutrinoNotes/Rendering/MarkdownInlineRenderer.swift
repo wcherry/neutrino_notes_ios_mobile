@@ -7,13 +7,40 @@ import SwiftUI
 /// suitable for hosting in a SwiftUI `Text`. Pure function, no view state.
 enum MarkdownInlineRenderer {
 
-    static func attributedString(for inlines: [MarkdownInline], footnotes: [MarkdownFootnote]) -> AttributedString {
-        renderChildren(inlines, intent: [], link: nil)
+    /// The URL scheme a `[[wiki link]]` is rendered with, so `MarkdownView` can intercept the tap
+    /// instead of letting the system try to open it. Parallel to `nn-footnote://`.
+    static let wikiLinkScheme = "nn-wikilink"
+
+    /// The link URL for a wiki-link title, percent-encoded so a title with spaces or punctuation
+    /// survives the round trip.
+    static func wikiLinkURL(for title: String) -> URL? {
+        let encoded = title.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? title
+        return URL(string: "\(wikiLinkScheme)://\(encoded)")
+    }
+
+    /// The title inside a `nn-wikilink://` URL, or nil if that isn't what this is.
+    static func wikiLinkTitle(from url: URL) -> String? {
+        guard url.scheme == wikiLinkScheme else { return nil }
+        let encoded = url.host ?? String(url.absoluteString.dropFirst("\(wikiLinkScheme)://".count))
+        return encoded.removingPercentEncoding ?? encoded
+    }
+
+    /// `resolvedTitles` decides how each wiki link is drawn: a title in the set points at a note
+    /// this device knows about and is drawn as a live link; anything else is drawn as a broken one.
+    /// Both stay tappable — an unknown title is an invitation to create the note, and may also be a
+    /// note in a folder this session simply hasn't listed.
+    static func attributedString(for inlines: [MarkdownInline],
+                                 footnotes: [MarkdownFootnote],
+                                 resolvedTitles: Set<String> = []) -> AttributedString {
+        renderChildren(inlines, intent: [], link: nil, resolvedTitles: resolvedTitles)
     }
 
     // MARK: - Recursive Rendering
 
-    private static func render(_ inline: MarkdownInline, intent: InlinePresentationIntent, link: URL?) -> AttributedString {
+    private static func render(_ inline: MarkdownInline,
+                               intent: InlinePresentationIntent,
+                               link: URL?,
+                               resolvedTitles: Set<String>) -> AttributedString {
         switch inline {
         case .text(let string):
             var attributed = AttributedString(string)
@@ -21,13 +48,13 @@ enum MarkdownInlineRenderer {
             return attributed
 
         case .emphasis(let children):
-            return renderChildren(children, intent: intent.union(.emphasized), link: link)
+            return renderChildren(children, intent: intent.union(.emphasized), link: link, resolvedTitles: resolvedTitles)
 
         case .strong(let children):
-            return renderChildren(children, intent: intent.union(.stronglyEmphasized), link: link)
+            return renderChildren(children, intent: intent.union(.stronglyEmphasized), link: link, resolvedTitles: resolvedTitles)
 
         case .strikethrough(let children):
-            return renderChildren(children, intent: intent.union(.strikethrough), link: link)
+            return renderChildren(children, intent: intent.union(.strikethrough), link: link, resolvedTitles: resolvedTitles)
 
         case .code(let code):
             var attributed = AttributedString(code)
@@ -36,7 +63,21 @@ enum MarkdownInlineRenderer {
             return attributed
 
         case .link(let inlines, let destination):
-            return renderChildren(inlines, intent: intent, link: URL(string: destination))
+            return renderChildren(inlines, intent: intent, link: URL(string: destination), resolvedTitles: resolvedTitles)
+
+        case .wikiLink(let title):
+            // The brackets are dropped: the title is what the writer meant to read as a link, and
+            // leaving `[[…]]` on screen would make the rendered note look like its own source.
+            var attributed = AttributedString(WikiLink.displayTitle(for: title))
+            let isResolved = resolvedTitles.contains(WikiLink.indexKey(for: title))
+            apply(intent: intent, link: wikiLinkURL(for: title), to: &attributed)
+            // A broken link stays legible but stops claiming to lead somewhere; `MarkdownView`
+            // tints the live ones through the environment's accent colour.
+            if !isResolved {
+                attributed.foregroundColor = .secondary
+                attributed.underlineStyle = .single
+            }
+            return attributed
 
         case .image(let alt, _, _):
             // Mid-paragraph images fall back to their alt text (documented limitation);
@@ -60,10 +101,13 @@ enum MarkdownInlineRenderer {
         }
     }
 
-    private static func renderChildren(_ children: [MarkdownInline], intent: InlinePresentationIntent, link: URL?) -> AttributedString {
+    private static func renderChildren(_ children: [MarkdownInline],
+                                       intent: InlinePresentationIntent,
+                                       link: URL?,
+                                       resolvedTitles: Set<String>) -> AttributedString {
         var result = AttributedString()
         for child in children {
-            result += render(child, intent: intent, link: link)
+            result += render(child, intent: intent, link: link, resolvedTitles: resolvedTitles)
         }
         return result
     }

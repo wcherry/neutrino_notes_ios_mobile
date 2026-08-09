@@ -5,6 +5,15 @@ struct ContentView: View {
     @EnvironmentObject var deepLinkRouter: DeepLinkRouter
     @State private var selectedTab = 0
 
+    // Epic 20: each tab's stack owns its own path, so each needs its own router to push a
+    // `[[wiki link]]` onto. A single shared one would push the same note onto all four.
+    @State private var recentsPath = NavigationPath()
+    @State private var favoritesPath = NavigationPath()
+    @State private var offlinePath = NavigationPath()
+    @StateObject private var recentsRouter = NoteRouter()
+    @StateObject private var favoritesRouter = NoteRouter()
+    @StateObject private var offlineRouter = NoteRouter()
+
     var body: some View {
         TabView(selection: $selectedTab) {
             NotesView()
@@ -13,24 +22,27 @@ struct ContentView: View {
                 }
                 .tag(0)
 
-            NavigationStack {
+            NavigationStack(path: $recentsPath) {
                 RecentsView()
+                    .noteRouting(recentsRouter, path: $recentsPath)
             }
             .tabItem {
                 Label("Recents", systemImage: "clock")
             }
             .tag(1)
 
-            NavigationStack {
+            NavigationStack(path: $favoritesPath) {
                 FavoritesView()
+                    .noteRouting(favoritesRouter, path: $favoritesPath)
             }
             .tabItem {
                 Label("Favorites", systemImage: "star")
             }
             .tag(2)
 
-            NavigationStack {
+            NavigationStack(path: $offlinePath) {
                 OfflineView()
+                    .noteRouting(offlineRouter, path: $offlinePath)
             }
             .tabItem {
                 Label("Offline", systemImage: "arrow.down.circle")
