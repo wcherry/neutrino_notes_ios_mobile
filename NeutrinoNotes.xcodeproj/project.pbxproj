@@ -731,7 +731,7 @@
 				CODE_SIGN_ENTITLEMENTS = NeutrinoNotes/NeutrinoNotes.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 8;
 				DEVELOPMENT_TEAM = 46KWJJ63FU;
 				INFOPLIST_FILE = NeutrinoNotes/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
@@ -913,7 +913,7 @@
 				CODE_SIGN_ENTITLEMENTS = NeutrinoNotes/NeutrinoNotes.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 8;
 				DEVELOPMENT_TEAM = 46KWJJ63FU;
 				INFOPLIST_FILE = NeutrinoNotes/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
