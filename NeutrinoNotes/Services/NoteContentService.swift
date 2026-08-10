@@ -67,7 +67,7 @@ final class NoteContentService: ObservableObject {
         let encryptedContent = try encrypt(text: "", dek: dek, xcss: xcss)
         let encryptedMetadata = try encryptMetadata(name: name, mimeType: NoteItem.markdownMIME, dek: dek, xcss: xcss)
         let sealedFileKey = try sealDEK(dek)
-        logger.error("createNote: dek(b64)=\(Self.b64(dek), privacy: .public) encryptedContent=\(encryptedContent.count) bytes sha256=\(Self.fingerprint(encryptedContent), privacy: .public)")
+        logger.debug("createNote: encryptedContent=\(encryptedContent.count) bytes sha256=\(Self.fingerprint(encryptedContent), privacy: .public)")
 
         let form = buildUploadBody(
             encryptedData: encryptedContent, fileName: name, mimeType: NoteItem.markdownMIME,
@@ -113,12 +113,12 @@ final class NoteContentService: ObservableObject {
         await debugCompareRegisteredPublicKey(token: token)
 
         let sealedFileKey = try await fetchSealedDEK(fileID: item.id, token: token)
-        logger.error("loadContent: sealedFileKey (base64url, \(sealedFileKey.count) chars) = \(sealedFileKey, privacy: .public)")
+        logger.debug("loadContent: sealedFileKey is \(sealedFileKey.count) chars")
 
         let dek: Bytes
         do {
             dek = try unsealDEK(sealedFileKey)
-            logger.error("loadContent: unsealDEK succeeded, dek(b64)=\(Self.b64(dek), privacy: .public)")
+            logger.debug("loadContent: unsealDEK succeeded")
         } catch {
             logger.error("loadContent: unsealDEK FAILED for id=\(item.id, privacy: .public): \(error, privacy: .public)")
             throw error
@@ -147,7 +147,7 @@ final class NoteContentService: ObservableObject {
 
         let xcss = Self.sodium.secretStream.xchacha20poly1305
         let encryptedContent = try encrypt(text: text, dek: dek, xcss: xcss)
-        logger.error("saveContent: dek(b64)=\(Self.b64(dek), privacy: .public) plaintext=\(text.utf8.count) bytes encryptedContent=\(encryptedContent.count) bytes sha256=\(Self.fingerprint(encryptedContent), privacy: .public)")
+        logger.debug("saveContent: plaintext=\(text.utf8.count) bytes encryptedContent=\(encryptedContent.count) bytes sha256=\(Self.fingerprint(encryptedContent), privacy: .public)")
 
         guard let url = URL(string: baseURL + "/api/v1/drive/files/\(item.id)/autosave") else {
             throw NoteContentError.serverError(statusCode: 0)
