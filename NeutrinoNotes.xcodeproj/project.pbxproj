@@ -11,7 +11,6 @@
 		04D73FC6EC530E8F2618D1B8 /* MarkdownInlineRendererTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A029D25E5FBAAF8E4D6FCE2 /* MarkdownInlineRendererTests.swift */; };
 		0646A51107AF5489D6533876 /* VersionHistoryViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9094FCFDBD099267EC4325A7 /* VersionHistoryViewTests.swift */; };
 		06A2AD181C6474A479215B66 /* SyncEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A218B6CE4D138914CC0EA89E /* SyncEngineTests.swift */; };
-		08B2DE58C229B82C712848BC /* NeutrinoCrypto in Frameworks */ = {isa = PBXBuildFile; productRef = E7CA0EF7A9640E230A560634 /* NeutrinoCrypto */; };
 		08BBEFBB169BFE4EBA60F3DB /* KeychainServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE5256CCC96C4767EFEAAD0A /* KeychainServiceTests.swift */; };
 		0B01626B8464B63AC84380A8 /* NoteEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD63F5DC6FFA65774D73C6FD /* NoteEditorView.swift */; };
 		0B51675309D36A67C3073F90 /* AppLockTimeoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CED9A55B35C05D14B737B7BB /* AppLockTimeoutTests.swift */; };
@@ -27,7 +26,9 @@
 		333736FB499081803CE672B0 /* MarkdownModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC7B9F35E6DBDF234F1F6FF7 /* MarkdownModel.swift */; };
 		3366911B9F1A15152C153997 /* OfflineNoteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B74584F5B121E8FA1366B2F5 /* OfflineNoteTests.swift */; };
 		34DFFDE8EA596D8B7D93C1BA /* NoteBrowserView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 201B79AA98629E1D8F05A2A3 /* NoteBrowserView.swift */; };
+		362371247A7D1110B7F18195 /* KeyQRDecryptService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB6F598EC4D585DD519C49C2 /* KeyQRDecryptService.swift */; };
 		369CF4E61336539D32EF35D6 /* VersionHistoryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E774495570C376829E7A1E8 /* VersionHistoryService.swift */; };
+		39C9310EB051A5BEEA56EC7E /* NeutrinoAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 5603680DA0A5539B7337E432 /* NeutrinoAuth */; };
 		39FD4805E90E251D572BD20A /* NotesDriveService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2079E6AE915148EE429577 /* NotesDriveService.swift */; };
 		3E131DDF4D6E0AC04129AB71 /* TagPickerSheetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5595BB4EA868A7722ECE0282 /* TagPickerSheetTests.swift */; };
 		3FCEAFD43E9E616B4F5BFC5B /* MarkdownTextEditorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE06CBECD5CB3BFFBA5BE32B /* MarkdownTextEditorTests.swift */; };
@@ -39,7 +40,6 @@
 		4445A5048D62226C9F028918 /* WikiLinkMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66E29EE64BF0E0F1E7D1142B /* WikiLinkMenu.swift */; };
 		45E481DC29AF63D2C22EC792 /* DeepLinkRouterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58959E549E85888914967A52 /* DeepLinkRouterTests.swift */; };
 		4612B921625F29C141EA34AD /* DirectoryUser.swift in Sources */ = {isa = PBXBuildFile; fileRef = C51B5707A8D67AACB61467F3 /* DirectoryUser.swift */; };
-		465D9DA010AB6217928E310B /* KeyQRDecryptService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 178B93F5F6E36E9D6C9E2C09 /* KeyQRDecryptService.swift */; };
 		470343D0DE88BCDDD3C27B6B /* RenameSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 522FCC848822184A4040BC32 /* RenameSheet.swift */; };
 		4B14FC6EB1412B98FB62B3D9 /* NoteFileInfoTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B510EBC26832FB9B5C4D669 /* NoteFileInfoTests.swift */; };
 		4BF982C6CD5A9438D8628DB1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 92728C320266F7F418CF8B6A /* Assets.xcassets */; };
@@ -57,6 +57,7 @@
 		6F51533DD0BE3D971209335C /* NoteItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31FABE1B1C4487D59970C55B /* NoteItem.swift */; };
 		70095AAF59286BEBA823F4BA /* NetworkMonitorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 157CE7BAEDEACBE01C92B9DB /* NetworkMonitorTests.swift */; };
 		701AAD97A8B7939C4426C70A /* NoteVersionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A710DA82258EF68EE5A8FC /* NoteVersionTests.swift */; };
+		707522ECAF7A1A9450C7330A /* NeutrinoUI in Frameworks */ = {isa = PBXBuildFile; productRef = 0569D1A8C76BA86A59AD343C /* NeutrinoUI */; };
 		719A7E98E62DB63946105E41 /* FileLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAF1C434AA5AC804189E9201 /* FileLink.swift */; };
 		723B28848C27880733F7CBA1 /* MoveSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22819B1191259272AC436848 /* MoveSheet.swift */; };
 		750F7D3BFB11AE4B9F546A89 /* RecentsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E845A639EDC18142949B391 /* RecentsView.swift */; };
@@ -70,6 +71,7 @@
 		8188383DE9D26812FD0154FD /* NeutrinoAppLinkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5901B6F31B4AE9F6A968CCA2 /* NeutrinoAppLinkTests.swift */; };
 		81A7B0BC66D999611B390DF7 /* KeyringStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C87F5BD319621451C578F44 /* KeyringStore.swift */; };
 		81C100C050084DA3AEBACF8C /* SharingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 850ACDE4819D77EF6A0EFF65 /* SharingService.swift */; };
+		82717C5B414A0190B6A07021 /* NeutrinoCore in Frameworks */ = {isa = PBXBuildFile; productRef = 402954C11FCD9BEAB78653D1 /* NeutrinoCore */; };
 		8331C532670FDA47F0CCDED3 /* NotesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AAF664EBEC0BFC2481E4353 /* NotesView.swift */; };
 		850BBD37D4BFC5043940A8EE /* NoteFileInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18A855E510E7F72E4B3D52FC /* NoteFileInfo.swift */; };
 		88C5BE06FF8071AB03E54F3C /* WikiLinkIndexTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BDDA15017D4CB5B205A50A7 /* WikiLinkIndexTests.swift */; };
@@ -79,7 +81,6 @@
 		92A3AF9C1170EC51CAF8F0D7 /* LinksServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A442D04B675A4E093413CE01 /* LinksServiceTests.swift */; };
 		96317674A393263234FAF04B /* WikiLinkIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8E0D35B0FC38BB9FA175E9A /* WikiLinkIndex.swift */; };
 		978C07397EE3ED42B7A02035 /* BiometricAuthenticator.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7B5960AF788D52467140506 /* BiometricAuthenticator.swift */; };
-		979799788B5E8440453CA576 /* NeutrinoCore in Frameworks */ = {isa = PBXBuildFile; productRef = 18A3C90A9AA4416F05866BAA /* NeutrinoCore */; };
 		99B76BE51EA027EE3B6DA2F8 /* FavoritesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8E8C34EA1CBD53460351024 /* FavoritesView.swift */; };
 		9AFCBB7CC49D4503DC315AB3 /* OfflineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF79FFDD4161E0548FD3CB7C /* OfflineView.swift */; };
 		9C5E270A854A22CE0E8C1E4F /* WikiLinkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64F6DBB562CA4F6B3A1E0273 /* WikiLinkTests.swift */; };
@@ -96,7 +97,6 @@
 		BDE38B7CC52EB9FD0F1DC412 /* TagsServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AD121707E4A664F21EB01DC /* TagsServiceTests.swift */; };
 		BF099C4DA39495C4334E0E2E /* KeyFileService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C852BEAD45665CE636D93CA /* KeyFileService.swift */; };
 		BF649AA9471FD61B350C09F6 /* OfflineStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70B750C0BB16EDFBB8ADF61D /* OfflineStoreTests.swift */; };
-		BFF8D2FAD41DF577E7E09048 /* NeutrinoUI in Frameworks */ = {isa = PBXBuildFile; productRef = 629A2C845F6530442F1E3D3D /* NeutrinoUI */; };
 		C36E86D0D81EA30FC0AD9F85 /* VersionHistoryServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 609F30B2568474CDF1BBCFBA /* VersionHistoryServiceTests.swift */; };
 		C3B19DB6AF34D12B7C23014C /* KeyImportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6486092B284D2187F1F263CD /* KeyImportService.swift */; };
 		C77BE9552899748B24DECDDA /* KeyRestoreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A594E53614C8DDE035A07210 /* KeyRestoreView.swift */; };
@@ -114,7 +114,6 @@
 		D1E443FBA9ACB555EE1FCB2E /* NoteTagTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C513325052A9DDBCA0921870 /* NoteTagTests.swift */; };
 		D513B5AC01930FFFCA674156 /* NoteTextStatsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC8D52402CEE194162B306D5 /* NoteTextStatsTests.swift */; };
 		D58767196FAB6BE450BBE993 /* SharingServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82B5E4568627515216AE80DE /* SharingServiceTests.swift */; };
-		D911478E288228804F48E18D /* NeutrinoAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 1D50484D2C9CF0D7BB25FECB /* NeutrinoAuth */; };
 		D99AB3B20DFD322A765D3EEB /* NeutrinoNotesApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7219A737528AEE2A68BD1328 /* NeutrinoNotesApp.swift */; };
 		E13D1729B1D7A7D5A386219E /* CreateNoteSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2808F78787F12601659B34C4 /* CreateNoteSheet.swift */; };
 		E35A5EFE4742F39F9A7581B2 /* TextDiffTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5B5055A7333FBF616C13F61 /* TextDiffTests.swift */; };
@@ -157,7 +156,6 @@
 		13AB18D403AEA6DD0F1F8585 /* SharingViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharingViewTests.swift; sourceTree = "<group>"; };
 		157CE7BAEDEACBE01C92B9DB /* NetworkMonitorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkMonitorTests.swift; sourceTree = "<group>"; };
 		1707150A87109D84F1A2BF6B /* MarkdownChecklist.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownChecklist.swift; sourceTree = "<group>"; };
-		178B93F5F6E36E9D6C9E2C09 /* KeyQRDecryptService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeyQRDecryptService.swift; sourceTree = "<group>"; };
 		18A855E510E7F72E4B3D52FC /* NoteFileInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteFileInfo.swift; sourceTree = "<group>"; };
 		1A2079E6AE915148EE429577 /* NotesDriveService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesDriveService.swift; sourceTree = "<group>"; };
 		1ACD6ED18D5DF8EFEA84E5E5 /* SyncEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncEngine.swift; sourceTree = "<group>"; };
@@ -206,6 +204,7 @@
 		6BDDA15017D4CB5B205A50A7 /* WikiLinkIndexTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WikiLinkIndexTests.swift; sourceTree = "<group>"; };
 		6E447B447258D820BF3E29D1 /* MarkdownFormat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownFormat.swift; sourceTree = "<group>"; };
 		6F3BB49B2701A5C8A46A9176 /* OfflineNote.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineNote.swift; sourceTree = "<group>"; };
+		706FB02B415EC2CD4F35FDA7 /* neutrino_shared_ios */ = {isa = PBXFileReference; lastKnownFileType = folder; name = neutrino_shared_ios; path = ../neutrino_shared_ios; sourceTree = SOURCE_ROOT; };
 		70B2676234B8AEF0E5262BBA /* NoteTextStats.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteTextStats.swift; sourceTree = "<group>"; };
 		70B750C0BB16EDFBB8ADF61D /* OfflineStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineStoreTests.swift; sourceTree = "<group>"; };
 		7219A737528AEE2A68BD1328 /* NeutrinoNotesApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeutrinoNotesApp.swift; sourceTree = "<group>"; };
@@ -263,6 +262,7 @@
 		DFB4257169F4723F13DD66D7 /* TagsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagsService.swift; sourceTree = "<group>"; };
 		E5D515E027A18EA58222A4FA /* NoteRouterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteRouterTests.swift; sourceTree = "<group>"; };
 		EAB0E76F3572C0FB7CBA266F /* MultipartFormBodyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultipartFormBodyTests.swift; sourceTree = "<group>"; };
+		EB6F598EC4D585DD519C49C2 /* KeyQRDecryptService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyQRDecryptService.swift; sourceTree = "<group>"; };
 		ECA137AD70D5AA7CAB829078 /* KeyringTestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyringTestSupport.swift; sourceTree = "<group>"; };
 		F4A710DA82258EF68EE5A8FC /* NoteVersionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteVersionTests.swift; sourceTree = "<group>"; };
 		F70FBB7ED979E83CD6A9B2BA /* SaveVersionSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SaveVersionSheet.swift; sourceTree = "<group>"; };
@@ -281,15 +281,23 @@
 			files = (
 				F98875DFF506D21B9CC2A7F6 /* Sodium in Frameworks */,
 				60314FB500D576723BC46A3F /* Markdown in Frameworks */,
-				979799788B5E8440453CA576 /* NeutrinoCore in Frameworks */,
-				D911478E288228804F48E18D /* NeutrinoAuth in Frameworks */,
-				BFF8D2FAD41DF577E7E09048 /* NeutrinoUI in Frameworks */,
+				82717C5B414A0190B6A07021 /* NeutrinoCore in Frameworks */,
+				39C9310EB051A5BEEA56EC7E /* NeutrinoAuth in Frameworks */,
+				707522ECAF7A1A9450C7330A /* NeutrinoUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		04F2FB22FDA1841C0630F258 /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				706FB02B415EC2CD4F35FDA7 /* neutrino_shared_ios */,
+			);
+			name = Packages;
+			sourceTree = "<group>";
+		};
 		05D246C75C68EF692592444E /* Views */ = {
 			isa = PBXGroup;
 			children = (
@@ -330,6 +338,7 @@
 			children = (
 				D9396455AA9D6F5D23E546B3 /* NeutrinoNotes */,
 				93B3E880E4F6019088A07950 /* NeutrinoNotesTests */,
+				04F2FB22FDA1841C0630F258 /* Packages */,
 				E9FDDAE747E63E4828C72131 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -343,6 +352,7 @@
 				393475DD4550E99FC4658CE4 /* FileEventsClient.swift */,
 				4C852BEAD45665CE636D93CA /* KeyFileService.swift */,
 				6486092B284D2187F1F263CD /* KeyImportService.swift */,
+				EB6F598EC4D585DD519C49C2 /* KeyQRDecryptService.swift */,
 				057A6D0DE2728F1FFABB0441 /* Keyring.swift */,
 				8C87F5BD319621451C578F44 /* KeyringStore.swift */,
 				67C53FC498B266A41BE987B6 /* LinksService.swift */,
@@ -357,7 +367,6 @@
 				1ACD6ED18D5DF8EFEA84E5E5 /* SyncEngine.swift */,
 				DFB4257169F4723F13DD66D7 /* TagsService.swift */,
 				7E774495570C376829E7A1E8 /* VersionHistoryService.swift */,
-				178B93F5F6E36E9D6C9E2C09 /* KeyQRDecryptService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -504,9 +513,9 @@
 			packageProductDependencies = (
 				26FBE8C17640ABDEB8A9959D /* Sodium */,
 				5119EBD0D84B30F959144AAA /* Markdown */,
-				18A3C90A9AA4416F05866BAA /* NeutrinoCore */,
-				1D50484D2C9CF0D7BB25FECB /* NeutrinoAuth */,
-				629A2C845F6530442F1E3D3D /* NeutrinoUI */,
+				402954C11FCD9BEAB78653D1 /* NeutrinoCore */,
+				5603680DA0A5539B7337E432 /* NeutrinoAuth */,
+				0569D1A8C76BA86A59AD343C /* NeutrinoUI */,
 			);
 			productName = NeutrinoNotes;
 			productReference = F8B69D25B8551210651031F8 /* NeutrinoNotes.app */;
@@ -524,6 +533,8 @@
 				EECCF8BFF2F7D08DDFAB808A /* PBXTargetDependency */,
 			);
 			name = NeutrinoNotesTests;
+			packageProductDependencies = (
+			);
 			productName = NeutrinoNotesTests;
 			productReference = 84E2E2884CBD2F901948AC7C /* NeutrinoNotesTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
@@ -556,10 +567,9 @@
 			packageReferences = (
 				C20F3D789D96AD58D1F8A271 /* XCRemoteSwiftPackageReference "swift-markdown" */,
 				8576BD2452298409FC4C8B32 /* XCRemoteSwiftPackageReference "swift-sodium" */,
-				EA290AE26167C480F3DEDB87 /* XCLocalSwiftPackageReference "neutrino_shared_ios" */,
+				2FE6B7DB139E7E5653395A20 /* XCLocalSwiftPackageReference "../neutrino_shared_ios" */,
 			);
 			preferredProjectObjectVersion = 77;
-			productRefGroup = E9FDDAE747E63E4828C72131 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -601,6 +611,7 @@
 				BF099C4DA39495C4334E0E2E /* KeyFileService.swift in Sources */,
 				C3B19DB6AF34D12B7C23014C /* KeyImportService.swift in Sources */,
 				B64E2949EAB3843ADD92CAE7 /* KeyImportView.swift in Sources */,
+				362371247A7D1110B7F18195 /* KeyQRDecryptService.swift in Sources */,
 				58543D437FC2775457B82BB5 /* KeyQRImportView.swift in Sources */,
 				C77BE9552899748B24DECDDA /* KeyRestoreView.swift in Sources */,
 				548673CB48E66B805C146BEC /* Keyring.swift in Sources */,
@@ -656,7 +667,6 @@
 				7A15DE216B4828E50F69A634 /* WikiLink.swift in Sources */,
 				96317674A393263234FAF04B /* WikiLinkIndex.swift in Sources */,
 				4445A5048D62226C9F028918 /* WikiLinkMenu.swift in Sources */,
-				465D9DA010AB6217928E310B /* KeyQRDecryptService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -964,7 +974,7 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		EA290AE26167C480F3DEDB87 /* XCLocalSwiftPackageReference "neutrino_shared_ios" */ = {
+		2FE6B7DB139E7E5653395A20 /* XCLocalSwiftPackageReference "../neutrino_shared_ios" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../neutrino_shared_ios;
 		};
@@ -990,31 +1000,27 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		18A3C90A9AA4416F05866BAA /* NeutrinoCore */ = {
+		0569D1A8C76BA86A59AD343C /* NeutrinoUI */ = {
 			isa = XCSwiftPackageProductDependency;
-			productName = NeutrinoCore;
-		};
-		1D50484D2C9CF0D7BB25FECB /* NeutrinoAuth */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = NeutrinoAuth;
+			productName = NeutrinoUI;
 		};
 		26FBE8C17640ABDEB8A9959D /* Sodium */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 8576BD2452298409FC4C8B32 /* XCRemoteSwiftPackageReference "swift-sodium" */;
 			productName = Sodium;
 		};
+		402954C11FCD9BEAB78653D1 /* NeutrinoCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = NeutrinoCore;
+		};
 		5119EBD0D84B30F959144AAA /* Markdown */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = C20F3D789D96AD58D1F8A271 /* XCRemoteSwiftPackageReference "swift-markdown" */;
 			productName = Markdown;
 		};
-		629A2C845F6530442F1E3D3D /* NeutrinoUI */ = {
+		5603680DA0A5539B7337E432 /* NeutrinoAuth */ = {
 			isa = XCSwiftPackageProductDependency;
-			productName = NeutrinoUI;
-		};
-		E7CA0EF7A9640E230A560634 /* NeutrinoCrypto */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = NeutrinoCrypto;
+			productName = NeutrinoAuth;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
