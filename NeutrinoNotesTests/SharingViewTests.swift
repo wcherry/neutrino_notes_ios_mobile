@@ -1,5 +1,7 @@
 import XCTest
 import SwiftUI
+import NeutrinoCore
+import NeutrinoAuth
 @testable import NeutrinoNotes
 
 /// Hosting tests for the Epic 22 screens. As in `OrganizationViewTests`, the point is that SwiftUI

@@ -1,4 +1,6 @@
 import XCTest
+import NeutrinoCore
+import NeutrinoAuth
 @testable import NeutrinoNotes
 
 /// Tests for AuthService.

@@ -25,17 +25,11 @@ final class NoteContentServiceTests: XCTestCase {
 
     // MARK: - Helpers
 
-    /// Generates a real Curve25519 key pair and stores it in the Keychain under the same
-    /// keys KeyImportService uses, base64url-encoded exactly as NoteContentService expects.
+    /// Installs a real single-version keyring and returns its key pair.
     @discardableResult
+    @MainActor
     private func storeRealKeyPair() -> Box.KeyPair {
-        let keyPair = sodium.box.keyPair()!
-        let pubB64 = sodium.utils.bin2base64(keyPair.publicKey, variant: .URLSAFE_NO_PADDING)!
-        let privB64 = sodium.utils.bin2base64(keyPair.secretKey, variant: .URLSAFE_NO_PADDING)!
-        KeychainService.save(pubB64, forKey: KeyImportService.publicKeyKeychainKey)
-        KeychainService.save(privB64, forKey: KeyImportService.privateKeyKeychainKey)
-        KeychainService.save("1", forKey: KeyImportService.keyVersionKeychainKey)
-        return keyPair
+        KeyringTestSupport.installKeyring()
     }
 
     // MARK: - encrypt / decrypt round trip
@@ -91,6 +85,7 @@ final class NoteContentServiceTests: XCTestCase {
 
     // MARK: - sealDEK / unsealDEK round trip
 
+    @MainActor
     func test_sealDEKThenUnseal_returnsOriginalDEK() throws {
         storeRealKeyPair()
         let sut = NoteContentService()
@@ -98,12 +93,55 @@ final class NoteContentServiceTests: XCTestCase {
         let dek = xcss.key()
 
         let sealed = try sut.sealDEK(dek)
-        let unsealed = try sut.unsealDEK(sealed)
+        let unsealed = try sut.unsealDEK(sealed.sealed, keyVersion: sealed.keyVersion)
 
         XCTAssertEqual(unsealed, dek)
     }
 
+    /// Sealing reports which key version it used, so the server can record it on
+    /// the key ref and this device can resolve it again later.
+    @MainActor
+    func test_sealDEK_reportsTheActiveKeyVersion() throws {
+        KeyringTestSupport.installRotatedKeyring(versions: 3)
+        let sut = NoteContentService()
+        let dek = sodium.secretStream.xchacha20poly1305.key()
+
+        XCTAssertEqual(try sut.sealDEK(dek).keyVersion, 3)
+    }
+
+    /// The point of keeping retired versions: a note sealed before a rotation
+    /// must still open afterwards.
+    @MainActor
+    func test_unsealDEK_opensADEKSealedToARetiredVersion() throws {
+        let pairs = KeyringTestSupport.installRotatedKeyring(versions: 2)
+        let sut = NoteContentService()
+        let dek = sodium.secretStream.xchacha20poly1305.key()
+
+        // Seal to version 1 by hand — the active version is 2.
+        let sealedToV1 = sodium.box.seal(message: dek, recipientPublicKey: pairs[0].publicKey)!
+        let b64 = sodium.utils.bin2base64(sealedToV1, variant: .URLSAFE_NO_PADDING)!
+
+        XCTAssertEqual(try sut.unsealDEK(b64, keyVersion: 1), dek)
+    }
+
+    /// A version this device does not hold is named, not reported as a bare
+    /// decryption failure — the user can act on "restore your recovery kit".
+    @MainActor
+    func test_unsealDEK_withAnUnknownVersion_namesTheMissingKey() {
+        KeyringTestSupport.installKeyring()
+        let sut = NoteContentService()
+
+        XCTAssertThrowsError(try sut.unsealDEK("whatever", keyVersion: 4)) { error in
+            guard case KeyringError.missingVersion(let version) = error else {
+                return XCTFail("Expected KeyringError.missingVersion, got \(error)")
+            }
+            XCTAssertEqual(version, 4)
+        }
+    }
+
+    @MainActor
     func test_sealDEK_withNoStoredKeys_throwsNoEncryptionKey() {
+        KeyringTestSupport.clear()
         let sut = NoteContentService()
         let xcss = sodium.secretStream.xchacha20poly1305
         let dek = xcss.key()

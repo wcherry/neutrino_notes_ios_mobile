@@ -1,14 +1,35 @@
 import SwiftUI
 import VisionKit
+import NeutrinoAuth
+import NeutrinoUI
 
 // MARK: - KeyQRImportView
+//
+// Enrolling this device by scanning the web app's key code.
+//
+// Three steps: scan the QR, type the six digits shown beside it, then install
+// what comes out. The third step is two installs, not one — the code carries the
+// account's *active* key, and the account's retired keys are then pulled from
+// the key file and unsealed with it (`KeyFileService`). Doing only the first
+// would leave a phone that opens everything written since the last rotation and
+// nothing written before it.
+//
+// The recovery kit path in `KeyRestoreView` remains and is the stronger one: it
+// carries every version directly and never touches the network. This exists
+// because it is what the web app offers, and because a phone is the device with
+// the camera.
 
 struct KeyQRImportView: View {
-    @Binding var isPresented: Bool
 
-    @State private var step: ImportStep = .scanning
-    @State private var pin: String = ""
-    @State private var isDecrypting = false
+    @Binding var isPresented: Bool
+    /// Called once the keyring is on this device, so the presenter can refresh.
+    var onImported: () -> Void = {}
+
+    @EnvironmentObject private var authService: AuthService
+
+    @State private var step: Step = .scanning
+    @State private var pin = ""
+    @State private var isWorking = false
 
     var body: some View {
         NavigationStack {
@@ -16,42 +37,43 @@ struct KeyQRImportView: View {
                 switch step {
                 case .scanning:
                     scanningView
-                case .enterPin(let qrString):
-                    pinEntryView(qrString: qrString)
-                case .success(let keyVersion):
-                    successView(keyVersion: keyVersion)
-                case .error(let message):
-                    errorView(message: message)
+                case .enterPin(let payload):
+                    pinEntryView(payload: payload)
+                case .success(let version, let outcome):
+                    successView(version: version, outcome: outcome)
+                case .failure(let message):
+                    failureView(message: message)
                 }
             }
-            .navigationTitle("Import via QR")
+            .navigationTitle("Scan key code")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        isPresented = false
-                    }
+                    Button("Cancel") { isPresented = false }
                 }
             }
         }
     }
 
-    // MARK: - Step Views
+    // MARK: - Steps
 
     private var scanningView: some View {
-        VStack(spacing: 0) {
+        Group {
+            // Unsupported on the Simulator and on devices without a Neural
+            // Engine. The recovery kit path remains, so this is a dead end
+            // rather than a failure.
             if DataScannerViewController.isSupported {
                 ZStack(alignment: .bottom) {
-                    QRScannerView { qrString in
-                        print("[QRImport] Scanned QR content:\n\(qrString)")
+                    QRScannerView { payload in
                         DispatchQueue.main.async {
                             pin = ""
-                            step = .enterPin(qrString: qrString)
+                            step = .enterPin(payload: payload)
                         }
                     }
                     .ignoresSafeArea(edges: .top)
 
-                    Text("Point your camera at a Neutrino key QR code.")
+                    Text("In Neutrino on the web, open Settings → Encryption and choose "
+                         + "“Key code for mobile”. Point the camera at the code it shows.")
                         .font(.subheadline)
                         .foregroundStyle(.white)
                         .multilineTextAlignment(.center)
@@ -59,8 +81,8 @@ struct KeyQRImportView: View {
                         .padding(.vertical, 16)
                         .background(.black.opacity(0.6))
                         .clipShape(RoundedRectangle(cornerRadius: 12))
-                        .padding(.bottom, 32)
                         .padding(.horizontal, 24)
+                        .padding(.bottom, 32)
                 }
             } else {
                 VStack(spacing: 16) {
@@ -68,10 +90,10 @@ struct KeyQRImportView: View {
                     Image(systemName: "qrcode.viewfinder")
                         .font(.system(size: 56))
                         .foregroundStyle(.secondary)
-                    Text("QR scanning not supported on this device.")
+                    Text("This device cannot scan QR codes.")
                         .font(.headline)
                         .multilineTextAlignment(.center)
-                    Text("Use the \"Import Key File\" option instead.")
+                    Text("Restore from your recovery kit instead.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -82,7 +104,7 @@ struct KeyQRImportView: View {
         }
     }
 
-    private func pinEntryView(qrString: String) -> some View {
+    private func pinEntryView(payload: String) -> some View {
         VStack(spacing: 24) {
             Spacer()
 
@@ -90,11 +112,11 @@ struct KeyQRImportView: View {
                 .font(.system(size: 56))
                 .foregroundStyle(.secondary)
 
-            Text("Enter your PIN")
+            Text("Enter the PIN")
                 .font(.title2)
                 .fontWeight(.semibold)
 
-            Text("Enter the PIN used to protect this key QR code.")
+            Text("The web page shows six digits beside the code.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -105,14 +127,14 @@ struct KeyQRImportView: View {
                 .keyboardType(.numberPad)
                 .padding(.horizontal, 32)
 
-            if isDecrypting {
+            if isWorking {
                 ProgressView()
                     .padding(.top, 8)
             } else {
                 Button {
-                    decryptAndImport(qrString: qrString)
+                    Task { await install(payload: payload) }
                 } label: {
-                    Text("Decrypt & Import")
+                    Text("Import key")
                         .frame(maxWidth: .infinity)
                         .padding()
                         .background(pin.isEmpty ? Color.accentColor.opacity(0.4) : Color.accentColor)
@@ -127,29 +149,45 @@ struct KeyQRImportView: View {
         }
     }
 
-    private func successView(keyVersion: String) -> some View {
+    private func successView(version: Int, outcome: KeyFileRestoreOutcome) -> some View {
         VStack(spacing: 16) {
             Spacer()
-            Image(systemName: "checkmark.circle.fill")
+            Image(systemName: "checkmark.seal.fill")
                 .font(.system(size: 72))
                 .foregroundStyle(.green)
-            Text("Keys imported successfully (v\(keyVersion))")
+            Text("Key imported (version \(version))")
                 .font(.headline)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 32)
+
+            // The pull is the part that decides whether older notes open, so its
+            // result is stated rather than left for the user to discover one
+            // unreadable note at a time.
+            if let note = Self.archiveNote(for: outcome, activeVersion: version) {
+                Text(note.text)
+                    .font(.subheadline)
+                    .foregroundStyle(note.isWarning ? Color.orange : Color.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+            }
+
+            Button("Done") {
+                isPresented = false
+                onImported()
+            }
+            .padding(.top, 8)
+
             Spacer()
         }
     }
 
-    private func errorView(message: String) -> some View {
+    private func failureView(message: String) -> some View {
         VStack(spacing: 24) {
             Spacer()
 
-            Image(systemName: "xmark.circle.fill")
-                .font(.system(size: 72))
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 64))
                 .foregroundStyle(.red)
 
-            Text("Import Failed")
+            Text("Import failed")
                 .font(.title2)
                 .fontWeight(.semibold)
 
@@ -163,7 +201,7 @@ struct KeyQRImportView: View {
                 pin = ""
                 step = .scanning
             } label: {
-                Text("Try Again")
+                Text("Try again")
                     .frame(maxWidth: .infinity)
                     .padding()
                     .background(Color.accentColor)
@@ -176,48 +214,97 @@ struct KeyQRImportView: View {
         }
     }
 
-    // MARK: - Decrypt & Import
+    // MARK: - Reporting the pull
 
-    private func decryptAndImport(qrString: String) {
-        let capturedPin = pin
-        isDecrypting = true
+    /// What to say about the key file, if anything.
+    ///
+    /// Built here rather than inline so the branches stay readable and the view
+    /// body stays cheap to type-check.
+    private static func archiveNote(for outcome: KeyFileRestoreOutcome, activeVersion: Int)
+    -> (text: String, isWarning: Bool)? {
+        // A rotated account with no key file at all. The retired keys were never backed up from
+        // the browser that rotated, so they are not reachable from here by any means — and saying
+        // "scan again" would send the user round a loop that cannot terminate.
+        if outcome.serverHasNoKeyFile && activeVersion > 1 {
+            let count = activeVersion - 1
+            return ("Your account has \(count) earlier key\(count == 1 ? "" : "s"), but they have "
+                    + "not been backed up to your account yet, so notes encrypted before your last "
+                    + "key change will not open here. On the computer that holds your key, open "
+                    + "Settings \u{203A} Encryption and back up your older keys, then reopen this "
+                    + "app.", true)
+        }
+        // The code always carries the account's current key, so a version in the
+        // file that we think is current means the *page* was stale — the browser
+        // built the code before a rotation it has not caught up with.
+        if outcome.activeIsStale {
+            return ("This code was made by a key that has since been replaced. Generate a new "
+                    + "one on the web and scan it again.", true)
+        }
+        if outcome.unopenable > 0 {
+            return ("\(outcome.unopenable) of your earlier keys could not be recovered, so notes "
+                    + "encrypted with them will not open here.", true)
+        }
+        if outcome.recovered > 0 {
+            let plural = outcome.recovered == 1 ? "key" : "keys"
+            return ("\(outcome.recovered) earlier \(plural) recovered from your account, so notes "
+                    + "encrypted before your last key change open here too.", false)
+        }
+        return nil
+    }
 
-        Task {
-            do {
-                let keyData = try await Task.detached(priority: .userInitiated) {
-                    try KeyQRDecryptService.decrypt(qrString: qrString, pin: capturedPin)
-                }.value
+    // MARK: - Install
 
-                print("[QRImport] Decrypted payload: \(String(data: keyData, encoding: .utf8) ?? "(not valid UTF-8)")")
+    @MainActor
+    private func install(payload: String) async {
+        let enteredPin = pin
+        isWorking = true
+        defer { isWorking = false }
 
-                let bundle = try KeyImportService.importKey(from: keyData)
-                KeyImportService.storeKeys(bundle)
+        guard let userId = await authService.currentUserID() else {
+            step = .failure(message: "You are signed out. Sign in and try again.")
+            return
+        }
 
-                await MainActor.run {
-                    isDecrypting = false
-                    step = .success(keyVersion: bundle.keyVersion)
-                }
+        do {
+            // 600 000 rounds of PBKDF2 is about a second on a phone, which is
+            // long enough to freeze the sheet if it runs on the main actor.
+            let keyData = try await Task.detached(priority: .userInitiated) {
+                try KeyQRDecryptService.decrypt(qrString: payload, pin: enteredPin)
+            }.value
 
-                try? await Task.sleep(nanoseconds: 1_500_000_000)
-
-                await MainActor.run {
-                    isPresented = false
-                }
-            } catch {
-                await MainActor.run {
-                    isDecrypting = false
-                    step = .error(message: error.localizedDescription)
-                }
+            let bundle = try KeyImportService.importKey(from: keyData)
+            guard KeyImportService.storeKeys(bundle, userId: userId) else {
+                step = .failure(message: "Could not save the key to this device.")
+                return
             }
+            pin = ""
+
+            // The active key is in place, which is what opens the key file. A
+            // failure here is reported but must not undo the import: a device
+            // with the current key and no archive still reads everything
+            // written since the last rotation, and the pull can be retried.
+            var outcome = KeyFileRestoreOutcome()
+            do {
+                outcome = try await KeyFileService.shared.restoreArchivedKeys(using: authService)
+            } catch {
+                step = .success(version: Int(bundle.keyVersion) ?? 1, outcome: outcome)
+                onImported()
+                return
+            }
+
+            step = .success(version: Int(bundle.keyVersion) ?? 1, outcome: outcome)
+            onImported()
+        } catch {
+            step = .failure(message: error.localizedDescription)
         }
     }
 }
 
-// MARK: - ImportStep
+// MARK: - Step
 
-private enum ImportStep {
+private enum Step {
     case scanning
-    case enterPin(qrString: String)
-    case success(keyVersion: String)
-    case error(message: String)
+    case enterPin(payload: String)
+    case success(version: Int, outcome: KeyFileRestoreOutcome)
+    case failure(message: String)
 }

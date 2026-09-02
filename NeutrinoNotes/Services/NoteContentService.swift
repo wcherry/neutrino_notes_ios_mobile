@@ -2,6 +2,8 @@ import Foundation
 import Sodium
 import CryptoKit
 import os.log
+import NeutrinoCore
+import NeutrinoAuth
 
 // MARK: - NoteContentError
 
@@ -91,7 +93,10 @@ final class NoteContentService: ObservableObject {
             throw NoteContentError.decodingError(underlying: error)
         }
 
-        try await storeFileKey(fileID: created.id, encryptedFileKey: sealedFileKey, token: token)
+        try await storeFileKey(fileID: created.id,
+                               encryptedFileKey: sealedFileKey.sealed,
+                               keyVersion: sealedFileKey.keyVersion,
+                               token: token)
         logger.error("createNote succeeded: id=\(created.id, privacy: .public)")
 
         return NoteItem(
@@ -113,11 +118,11 @@ final class NoteContentService: ObservableObject {
         await debugCompareRegisteredPublicKey(token: token)
 
         let sealedFileKey = try await fetchSealedDEK(fileID: item.id, token: token)
-        logger.debug("loadContent: sealedFileKey is \(sealedFileKey.count) chars")
+        logger.debug("loadContent: sealedFileKey is \(sealedFileKey.sealed.count) chars, v\(sealedFileKey.keyVersion)")
 
         let dek: Bytes
         do {
-            dek = try unsealDEK(sealedFileKey)
+            dek = try unsealDEK(sealedFileKey.sealed, keyVersion: sealedFileKey.keyVersion)
             logger.debug("loadContent: unsealDEK succeeded")
         } catch {
             logger.error("loadContent: unsealDEK FAILED for id=\(item.id, privacy: .public): \(error, privacy: .public)")
@@ -183,7 +188,9 @@ final class NoteContentService: ObservableObject {
 
     /// Downloads a note's still-encrypted body together with its sealed DEK, without decrypting.
     /// Used by OfflineStore so the cache-at-rest blob is byte-identical to the server's.
-    func downloadEncrypted(for item: NoteItem) async throws -> (ciphertext: Data, sealedDEK: String) {
+    func downloadEncrypted(
+        for item: NoteItem
+    ) async throws -> (ciphertext: Data, sealedDEK: (sealed: String, keyVersion: Int)) {
         logger.debug("downloadEncrypted: id=\(item.id, privacy: .public)")
         let token = try await authorizedToken()
         let sealedDEK = try await fetchSealedDEK(fileID: item.id, token: token)
@@ -319,7 +326,7 @@ final class NoteContentService: ObservableObject {
     /// The caller's sealed DEK for a file, or nil when the file has no key ref at all — a plaintext
     /// file uploaded outside this app. Distinguishing the two matters when sharing: "no key to
     /// re-wrap" is a fact about the file, not a failure.
-    func sealedFileKey(for fileID: String) async throws -> String? {
+    func sealedFileKey(for fileID: String) async throws -> (sealed: String, keyVersion: Int)? {
         let token = try await authorizedToken()
         do {
             return try await fetchSealedDEK(fileID: fileID, token: token)
@@ -329,42 +336,50 @@ final class NoteContentService: ObservableObject {
         }
     }
 
-    /// Seals `dek` to the caller's stored Curve25519 public key (crypto_box_seal).
-    func sealDEK(_ dek: Bytes) throws -> String {
-        guard let pubKeyString = KeychainService.load(forKey: KeyImportService.publicKeyKeychainKey),
-              let pubKeyData = Data(base64URLEncoded: pubKeyString) else {
+    /// Seals `dek` to the caller's *active* Curve25519 public key, and reports
+    /// which key version that was — the server records it on the key ref so this
+    /// or another device can resolve the right secret key later.
+    @MainActor
+    func sealDEK(_ dek: Bytes) throws -> (sealed: String, keyVersion: Int) {
+        guard let active = KeyringStore.shared.activeKeyPair() else {
             throw NoteContentError.noEncryptionKey
         }
-        guard let sealed = Self.sodium.box.seal(message: dek, recipientPublicKey: Array(pubKeyData)) else {
+        guard let sealed = Self.sodium.box.seal(message: dek, recipientPublicKey: active.publicKey) else {
             throw NoteContentError.encryptionFailed
         }
         guard let b64 = Self.sodium.utils.bin2base64(sealed, variant: .URLSAFE_NO_PADDING) else {
             throw NoteContentError.encryptionFailed
         }
-        return b64
+        return (b64, active.version)
     }
 
-    /// Reverses `sealDEK(_:)` using the caller's stored private key (crypto_box_seal_open).
-    func unsealDEK(_ sealedBase64: String) throws -> Bytes {
-        guard let pubKeyString = KeychainService.load(forKey: KeyImportService.publicKeyKeychainKey),
-              let pubKeyData = Data(base64URLEncoded: pubKeyString),
-              let privKeyString = KeychainService.load(forKey: KeyImportService.privateKeyKeychainKey),
-              let privKeyData = Data(base64URLEncoded: privKeyString) else {
-            logger.error("unsealDEK: no stored key pair, or stored key failed Base64URL decode")
+    /// Reverses `sealDEK(_:)`, resolving `keyVersion` against this device's keyring.
+    ///
+    /// `keyVersion` defaults to 1 because key refs written before rotation
+    /// existed carry no version, and those are version 1 by definition. A
+    /// version this device does not hold throws `KeyringError.missingVersion`,
+    /// which names the missing key rather than reporting a bare decrypt failure.
+    @MainActor
+    func unsealDEK(_ sealedBase64: String, keyVersion: Int = 1) throws -> Bytes {
+        let keyPair: (publicKey: [UInt8], secretKey: [UInt8])
+        do {
+            keyPair = try KeyringStore.shared.keyPair(forVersion: keyVersion)
+        } catch KeyringError.noKeyring {
+            // No key at all is the same condition the seal path reports, and
+            // callers already branch on it. A *missing version* is different and
+            // propagates as itself, naming the key that is needed.
             throw NoteContentError.noEncryptionKey
         }
-        logger.error("unsealDEK: stored publicKey=\(pubKeyData.count) bytes, privateKey=\(privKeyData.count) bytes")
         guard let sealedBytes = Self.sodium.utils.base642bin(sealedBase64, variant: .URLSAFE_NO_PADDING) else {
-            logger.error("unsealDEK: sealed DEK is not valid Base64URL (raw string logged above by caller)")
+            logger.error("unsealDEK: sealed DEK is not valid Base64URL")
             throw NoteContentError.decryptionFailed
         }
-        logger.error("unsealDEK: sealedBytes=\(sealedBytes.count) bytes (expect 48 = 32-byte DEK + 16-byte seal overhead)")
         guard let dek: Bytes = Self.sodium.box.open(
             anonymousCipherText: sealedBytes,
-            recipientPublicKey: Array(pubKeyData),
-            recipientSecretKey: Array(privKeyData)
+            recipientPublicKey: keyPair.publicKey,
+            recipientSecretKey: keyPair.secretKey
         ) else {
-            logger.error("unsealDEK: crypto_box_seal_open returned nil — sealed DEK was not sealed to this key pair's public key")
+            logger.error("unsealDEK: crypto_box_seal_open returned nil for key version \(keyVersion, privacy: .public)")
             throw NoteContentError.decryptionFailed
         }
         return dek
@@ -386,10 +401,11 @@ final class NoteContentService: ObservableObject {
     /// key registered server-side for this account, to distinguish "wrong/stale imported
     /// key" from an actual bug in the seal/unseal or content-encryption code.
     private func debugCompareRegisteredPublicKey(token: String) async {
-        guard let localPubKeyString = KeychainService.load(forKey: KeyImportService.publicKeyKeychainKey) else {
-            logger.error("debugCompareRegisteredPublicKey: no local public key stored")
+        guard let active = await KeyringStore.shared.activeKeyPair() else {
+            logger.error("debugCompareRegisteredPublicKey: this device holds no keyring")
             return
         }
+        let localPubKeyString = Base64URL.encode(active.publicKey)
         do {
             guard let meURL = URL(string: baseURL + "/api/v1/auth/me") else { return }
             var meRequest = URLRequest(url: meURL)
@@ -442,7 +458,7 @@ final class NoteContentService: ObservableObject {
         }
     }
 
-    private func fetchSealedDEK(fileID: String, token: String) async throws -> String {
+    private func fetchSealedDEK(fileID: String, token: String) async throws -> (sealed: String, keyVersion: Int) {
         guard let url = URL(string: baseURL + "/api/v1/drive/files/\(fileID)/key") else {
             throw NoteContentError.serverError(statusCode: 0)
         }
@@ -460,7 +476,8 @@ final class NoteContentService: ObservableObject {
         do {
             let decoder = JSONDecoder()
             decoder.keyDecodingStrategy = .convertFromSnakeCase
-            return try decoder.decode(APIKeyResponse.self, from: data).encryptedFileKey
+            let parsed = try decoder.decode(APIKeyResponse.self, from: data)
+            return (parsed.encryptedFileKey, parsed.keyVersion ?? 1)
         } catch {
             throw NoteContentError.decodingError(underlying: error)
         }
@@ -484,13 +501,15 @@ final class NoteContentService: ObservableObject {
         return data
     }
 
-    private func storeFileKey(fileID: String, encryptedFileKey: String, token: String) async throws {
+    private func storeFileKey(fileID: String, encryptedFileKey: String, keyVersion: Int, token: String) async throws {
         guard let url = URL(string: baseURL + "/api/v1/drive/files/\(fileID)/key") else { return }
         var request = URLRequest(url: url)
         request.httpMethod = "PUT"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.httpBody = try JSONEncoder().encode(["encryptedFileKey": encryptedFileKey])
+        request.httpBody = try JSONEncoder().encode(
+            SetFileKeyBody(encryptedFileKey: encryptedFileKey, keyVersion: keyVersion)
+        )
 
         let response: URLResponse
         do {
@@ -516,6 +535,15 @@ final class NoteContentService: ObservableObject {
     }
 }
 
+// MARK: - API Request Models
+
+/// `PUT /drive/files/{id}/key`. `keyVersion` says which entry of the caller's
+/// keyring sealed the DEK; the server stores it opaquely and hands it back.
+private struct SetFileKeyBody: Encodable {
+    let encryptedFileKey: String
+    let keyVersion: Int
+}
+
 // MARK: - API Response Models
 
 private struct APIFileResponse: Decodable {
@@ -529,6 +557,8 @@ private struct APIFileResponse: Decodable {
 
 private struct APIKeyResponse: Decodable {
     let encryptedFileKey: String
+    /// Absent on refs written before rotation existed; those are version 1.
+    let keyVersion: Int?
 }
 
 private struct APIUserProfile: Decodable {
@@ -538,6 +568,9 @@ private struct APIUserProfile: Decodable {
 private struct APIPublicKeyResponse: Decodable {
     let userId: String
     let publicKey: String
+    /// Which entry of the recipient's keyring this is — recorded on the key ref
+    /// when sharing, so they can resolve it against their own keyring.
+    let keyVersion: Int?
 }
 
 // MARK: - Data + Base64URL

@@ -1,4 +1,5 @@
 import XCTest
+import NeutrinoCore
 @testable import NeutrinoNotes
 
 /// Tests for `GET /drive/files/{id}/info` decoding — the endpoint that tells the editor what this

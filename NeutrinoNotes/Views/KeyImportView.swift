@@ -1,11 +1,15 @@
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
+import NeutrinoAuth
+import NeutrinoUI
 
 // MARK: - KeyImportView
 
 struct KeyImportView: View {
     @Binding var isPresented: Bool
+
+    @EnvironmentObject private var authService: AuthService
 
     @State private var isShowingPicker = false
     @State private var isShowingQRScanner = false
@@ -60,7 +64,7 @@ struct KeyImportView: View {
                     Button {
                         isShowingQRScanner = true
                     } label: {
-                        Label("Scan QR Code", systemImage: "qrcode.viewfinder")
+                        Label("Pair with a device", systemImage: "qrcode.viewfinder")
                             .frame(maxWidth: .infinity)
                             .padding()
                             .background(Color.secondary.opacity(0.15))
@@ -69,7 +73,10 @@ struct KeyImportView: View {
                     }
                     .padding(.horizontal, 32)
                     .sheet(isPresented: $isShowingQRScanner) {
-                        KeyQRImportView(isPresented: $isShowingQRScanner)
+                        DevicePairingView(isPresented: $isShowingQRScanner) {
+                            isPresented = false
+                        }
+                        .environmentObject(authService)
                     }
                 }
 
@@ -110,14 +117,35 @@ struct KeyImportView: View {
             }
 
             let bundle = try KeyImportService.importKey(from: data)
-            KeyImportService.storeKeys(bundle)
             try? FileManager.default.removeItem(at: url)
 
-            importedVersion = bundle.keyVersion
-            showSuccess = true
+            // The keyring is bound to an account, so adopting a key file needs
+            // to know whose it is becoming.
+            Task { @MainActor in
+                guard let userId = await authService.currentUserID() else {
+                    errorMessage = "You are signed out. Sign in and try again."
+                    showError = true
+                    return
+                }
+                guard KeyImportService.storeKeys(bundle, userId: userId) else {
+                    errorMessage = "Could not save the key to this device."
+                    showError = true
+                    return
+                }
+                // The file's own version, not a hardcoded 1: a key exported from a rotated
+                // account is not version 1, and saying so here is the only place the user sees
+                // which identity this device now holds.
+                importedVersion = bundle.keyVersion
+                showSuccess = true
 
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                isPresented = false
+                // A key file carries one keypair. The account's retired versions live in its key
+                // file, sealed to the key just imported — without this, notes written before the
+                // last rotation stay unreadable. A failure is not fatal: the next launch retries.
+                try? await KeyFileService.shared.restoreArchivedKeys(using: authService)
+
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    isPresented = false
+                }
             }
         } catch {
             try? FileManager.default.removeItem(at: url)

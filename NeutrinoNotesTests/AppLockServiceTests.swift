@@ -1,4 +1,5 @@
 import XCTest
+import NeutrinoUI
 @testable import NeutrinoNotes
 
 // MARK: - FakeBiometricAuthenticator

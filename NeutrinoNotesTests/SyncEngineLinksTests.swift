@@ -1,5 +1,6 @@
 import XCTest
 import Sodium
+import NeutrinoCore
 @testable import NeutrinoNotes
 
 // MARK: - FakeLinkPublisher
@@ -41,22 +42,16 @@ final class SyncEngineLinksTests: XCTestCase {
 
     override func tearDown() {
         try? FileManager.default.removeItem(at: tempDirectory)
-        _ = KeychainService.delete(forKey: KeyImportService.publicKeyKeychainKey)
-        _ = KeychainService.delete(forKey: KeyImportService.privateKeyKeychainKey)
+        KeyringStore.shared.clear()
         super.tearDown()
     }
 
     // MARK: - Fixtures
 
     @discardableResult
+    @MainActor
     private func storeRealKeyPair() -> Box.KeyPair {
-        let keyPair = sodium.box.keyPair()!
-        KeychainService.save(sodium.utils.bin2base64(keyPair.publicKey, variant: .URLSAFE_NO_PADDING)!,
-                             forKey: KeyImportService.publicKeyKeychainKey)
-        KeychainService.save(sodium.utils.bin2base64(keyPair.secretKey, variant: .URLSAFE_NO_PADDING)!,
-                             forKey: KeyImportService.privateKeyKeychainKey)
-        KeychainService.save("1", forKey: KeyImportService.keyVersionKeychainKey)
-        return keyPair
+        KeyringTestSupport.installKeyring()
     }
 
     private func seedNote(id: String = UUID().uuidString,
@@ -68,7 +63,8 @@ final class SyncEngineLinksTests: XCTestCase {
         try ciphertext.write(to: tempDirectory.appendingPathComponent("\(id).bin"))
         let note = OfflineNote(
             id: id, name: "Note.md", parentID: nil, mimeType: NoteItem.markdownMIME,
-            sealedDEK: try content.sealDEK(dek), serverModifiedAt: serverModifiedAt,
+            sealedDEK: try content.sealDEK(dek).sealed, keyVersion: 1,
+            serverModifiedAt: serverModifiedAt,
             cachedAt: Date(), sizeBytes: Int64(text.utf8.count), pendingEdit: nil, conflict: nil
         )
         return (note, dek)

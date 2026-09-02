@@ -1,4 +1,5 @@
 import XCTest
+import NeutrinoCore
 @testable import NeutrinoNotes
 
 /// Tests for the `NoteTag` model: decoding the shapes Drive's tag endpoints actually emit, and

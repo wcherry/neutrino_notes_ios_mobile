@@ -1,244 +1,167 @@
 import XCTest
-import CryptoKit
 import CommonCrypto
-import Foundation
 import Sodium
 @testable import NeutrinoNotes
 
-/// Tests for KeyQRDecryptService.
-///
-/// The `makeQRString` helper performs genuine PBKDF2-SHA256 key derivation and
-/// XSalsa20-Poly1305 encryption using swift-sodium, mirroring the protocol
-/// implemented by `KeyQRDecryptService.decrypt`, so the happy-path test
-/// exercises a real cryptographic round-trip rather than mocked data.
-final class KeyQRDecryptServiceTests: XCTestCase {
+// MARK: - KeyQRDecryptServiceTests
+//
+// The key code is the only path by which a key reaches this app from the web,
+// so its envelope has to match `web/packages/e2e-crypto/src/mobileKeyQr.ts`
+// byte for byte. There is no phone in the loop here: the tests build the
+// envelope exactly as the web side does — PBKDF2-SHA256 over the PIN, then a
+// libsodium secretbox — and check this opens it.
+//
+// The iteration count is deliberately low in the fixtures. 600 000 is the real
+// value and is what the app uses; running it per test would add seconds to the
+// suite to re-prove a number that is asserted directly instead.
 
-    // MARK: - Helpers
+final class KeyQRDecryptServiceTests: XCTestCase {
 
     private let sodium = Sodium()
 
-    /// Generates a real P-256 key pair and returns its fields serialised as a
-    /// JSON string: `{ "public_key": "<x963-base64>", "private_key":
-    /// "<raw-base64>", "key_version": "1" }`.
-    private func makeKeyPairJSON() -> String {
-        let privateKey = P256.Signing.PrivateKey()
-        let publicKey  = privateKey.publicKey
-        let pubB64  = publicKey.x963Representation.base64EncodedString()
-        let privB64 = privateKey.rawRepresentation.base64EncodedString()
-        let dict: [String: String] = [
-            "public_key":  pubB64,
-            "private_key": privB64,
-            "key_version": "1",
-        ]
-        let data = try! JSONSerialization.data(withJSONObject: dict, options: .sortedKeys)
-        return String(data: data, encoding: .utf8)!
-    }
+    // MARK: - Building an envelope the way the web app does
 
-    /// Encrypts `plaintextJSON` under `pin` using the same protocol that
-    /// `KeyQRDecryptService.decrypt` must reverse, and returns the outer QR
-    /// JSON string ready to be passed to the service.
-    ///
-    /// Protocol:
-    ///   1. Derive a 32-byte key from `pin` + random 16-byte salt via PBKDF2-SHA256.
-    ///   2. Seal `plaintextJSON` (UTF-8 bytes) with XSalsa20-Poly1305 (NaCl
-    ///      secretBox) using a random 24-byte nonce.
-    ///   3. Return `{ "v": 1, "alg": "pbkdf2-sha256+xsalsa20", "salt": b64url,
-    ///      "nonce": b64url, "ct": b64url, "iter": <iterations> }`.
-    private func makeQRString(plaintextJSON: String, pin: String, iterations: Int = 1000) -> String {
-        let saltData  = Data(sodium.randomBytes.buf(length: 16)!)
-        let nonceData = Data(sodium.randomBytes.buf(length: 24)!)
-
-        let key = pbkdf2SHA256(password: pin, salt: saltData, iterations: iterations, keyLength: 32)
-
-        let messageBytes = Array(plaintextJSON.utf8)
-        guard let cipherBytes = sodium.secretBox.seal(
-            message: messageBytes,
-            secretKey: Array(key),
-            nonce: Array(nonceData)
-        ) else {
-            XCTFail("XSalsa20-Poly1305 encryption failed in test helper")
-            return "{}"
-        }
-
-        let outerDict: [String: Any] = [
-            "v":     1,
-            "alg":   "pbkdf2-sha256+xsalsa20",
-            "salt":  base64URL(saltData),
-            "nonce": base64URL(nonceData),
-            "ct":    base64URL(Data(cipherBytes)),
-            "iter":  iterations,
-        ]
-        let outerData = try! JSONSerialization.data(withJSONObject: outerDict)
-        return String(data: outerData, encoding: .utf8)!
-    }
-
-    private func base64URL(_ data: Data) -> String {
-        data.base64EncodedString()
-            .replacingOccurrences(of: "+", with: "-")
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: "=", with: "")
-    }
-
-    private func pbkdf2SHA256(password: String, salt: Data, iterations: Int, keyLength: Int) -> Data {
-        let passwordData = Data(password.utf8)
-        var derivedKey = Data(repeating: 0, count: keyLength)
-
-        _ = derivedKey.withUnsafeMutableBytes { derivedBytes in
+    private func pbkdf2(pin: String, salt: Data, iterations: Int) -> Data {
+        var derived = Data(repeating: 0, count: 32)
+        let status: Int32 = derived.withUnsafeMutableBytes { out in
             salt.withUnsafeBytes { saltBytes in
-                passwordData.withUnsafeBytes { passwordBytes in
+                Data(pin.utf8).withUnsafeBytes { pinBytes in
                     CCKeyDerivationPBKDF(
                         CCPBKDFAlgorithm(kCCPBKDF2),
-                        passwordBytes.baseAddress?.assumingMemoryBound(to: Int8.self),
-                        passwordData.count,
+                        pinBytes.baseAddress?.assumingMemoryBound(to: Int8.self),
+                        pin.utf8.count,
                         saltBytes.baseAddress?.assumingMemoryBound(to: UInt8.self),
                         salt.count,
                         CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA256),
                         UInt32(iterations),
-                        derivedBytes.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                        keyLength
-                    )
+                        out.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                        32)
                 }
             }
         }
-        return derivedKey
+        XCTAssertEqual(status, Int32(kCCSuccess))
+        return derived
     }
 
-    // MARK: - Happy Path
+    private func envelope(payload: String,
+                          pin: String,
+                          iterations: Int = 1_000,
+                          includeIterations: Bool = true,
+                          alg: String = "pbkdf2-sha256+xsalsa20",
+                          version: Int = 1) -> String {
+        let salt = sodium.randomBytes.buf(length: 16)!
+        let nonce = sodium.randomBytes.buf(length: sodium.secretBox.NonceBytes)!
+        let key = Array(pbkdf2(pin: pin, salt: Data(salt), iterations: iterations))
+        // `seal` returns the combined MAC||ciphertext form, which is what the web side's
+        // `crypto_secretbox_easy` writes and what the service expects.
+        let ct = sodium.secretBox.seal(message: Array(payload.utf8), secretKey: key, nonce: nonce)!
 
-    /// A valid QR string encrypted with the correct PIN must return Data that
-    /// deserialises to a JSON object containing `public_key`, `private_key`,
-    /// and `key_version` — matching the plaintext that was originally encrypted.
-    ///
-    /// This test performs a genuine PBKDF2-SHA256 + XSalsa20-Poly1305 round-trip.
-    func test_decrypt_withValidQRAndCorrectPIN_returnsKeyPairData() throws {
-        let plaintextJSON = makeKeyPairJSON()
-        let qrString      = makeQRString(plaintextJSON: plaintextJSON, pin: "test-pin-1234")
-
-        let resultData = try KeyQRDecryptService.decrypt(qrString: qrString, pin: "test-pin-1234")
-
-        guard let parsed = try JSONSerialization.jsonObject(with: resultData) as? [String: String] else {
-            XCTFail("Decrypted data did not parse as [String: String] JSON object")
-            return
-        }
-        XCTAssertNotNil(parsed["public_key"],  "public_key must be present in decrypted JSON")
-        XCTAssertNotNil(parsed["private_key"], "private_key must be present in decrypted JSON")
-        XCTAssertNotNil(parsed["key_version"], "key_version must be present in decrypted JSON")
-
-        // Verify the round-trip is byte-for-byte identical to the original.
-        XCTAssertEqual(resultData, Data(plaintextJSON.utf8))
+        var fields = [
+            "\"v\":\(version)",
+            "\"alg\":\"\(alg)\"",
+            "\"salt\":\"\(Base64URL.encode(salt))\"",
+            "\"nonce\":\"\(Base64URL.encode(nonce))\"",
+            "\"ct\":\"\(Base64URL.encode(ct))\""
+        ]
+        if includeIterations { fields.append("\"iter\":\(iterations)") }
+        return "{\(fields.joined(separator: ","))}"
     }
 
-    // MARK: - Wrong PIN
+    /// The inner JSON the web side puts in the envelope. Every field is a string, including
+    /// `key_version` — a numeric one makes `KeyImportService`'s `[String: String]` cast fail with
+    /// "missing fields", which is why `mobileKeyQr.ts` stringifies it.
+    private func keyPayload(_ pair: Box.KeyPair, version: Int) -> String {
+        """
+        {"public_key":"\(Base64URL.encode(pair.publicKey))",\
+        "private_key":"\(Base64URL.encode(pair.secretKey))",\
+        "key_version":"\(version)"}
+        """
+    }
 
-    /// Passing a PIN that differs from the one used to encrypt must cause
-    /// decryption to fail with `KeyQRDecryptError.decryptionFailure`. PBKDF2
-    /// will derive a different key, so the Poly1305 tag will not verify.
-    func test_decrypt_withWrongPIN_throwsDecryptionFailure() {
-        let qrString = makeQRString(plaintextJSON: makeKeyPairJSON(), pin: "correct-pin")
+    // MARK: - Round trip
 
-        XCTAssertThrowsError(
-            try KeyQRDecryptService.decrypt(qrString: qrString, pin: "wrong-pin")
-        ) { error in
+    func testOpensAnEnvelopeBuiltTheWayTheWebAppBuildsOne() throws {
+        let pair = sodium.box.keyPair()!
+        let payload = keyPayload(pair, version: 3)
+
+        let opened = try KeyQRDecryptService.decrypt(qrString: envelope(payload: payload, pin: "123456"),
+                                                     pin: "123456")
+
+        XCTAssertEqual(String(decoding: opened, as: UTF8.self), payload)
+    }
+
+    /// The point of the whole path: what comes out is a key this app can install, at the version
+    /// the code says it is.
+    func testTheDecryptedPayloadImportsAsAKeyBundle() throws {
+        let pair = sodium.box.keyPair()!
+        let opened = try KeyQRDecryptService.decrypt(
+            qrString: envelope(payload: keyPayload(pair, version: 4), pin: "654321"),
+            pin: "654321")
+
+        let bundle = try KeyImportService.importKey(from: opened)
+
+        XCTAssertEqual(Base64URL.decode(bundle.publicKey), pair.publicKey)
+        XCTAssertEqual(Base64URL.decode(bundle.privateKey), pair.secretKey)
+        XCTAssertEqual(bundle.keyVersion, "4", "a rotated account's code is not version 1")
+    }
+
+    /// An older web build omits `iter`. It used 600 000, so the fallback has to be that number and
+    /// not a smaller one that would derive a different key.
+    func testFallsBackToSixHundredThousandIterationsWhenIterIsAbsent() throws {
+        XCTAssertEqual(KeyQRDecryptService.defaultIterations, 600_000)
+
+        let payload = #"{"public_key":"a","private_key":"b","key_version":"1"}"#
+        let qr = envelope(payload: payload, pin: "000000",
+                          iterations: KeyQRDecryptService.defaultIterations,
+                          includeIterations: false)
+
+        XCTAssertEqual(String(decoding: try KeyQRDecryptService.decrypt(qrString: qr, pin: "000000"),
+                              as: UTF8.self),
+                       payload)
+    }
+
+    // MARK: - Refusals
+
+    func testAWrongPinIsReportedAsSuch() {
+        let qr = envelope(payload: #"{"a":"b"}"#, pin: "111111")
+
+        XCTAssertThrowsError(try KeyQRDecryptService.decrypt(qrString: qr, pin: "222222")) { error in
             guard case KeyQRDecryptError.decryptionFailure = error else {
-                return XCTFail("Expected KeyQRDecryptError.decryptionFailure, got \(error)")
+                return XCTFail("expected decryptionFailure, got \(error)")
             }
         }
     }
 
-    // MARK: - Malformed Payload
+    func testAnUnknownAlgorithmIsRefusedRatherThanGuessed() {
+        let qr = envelope(payload: #"{"a":"b"}"#, pin: "111111", alg: "pbkdf2-sha512+aes")
 
-    /// When one of the base64url-encoded fields in the outer QR JSON is not
-    /// valid Base64, the service must throw
-    /// `KeyQRDecryptError.base64DecodeFailure` before attempting any
-    /// cryptographic operation.
-    func test_decrypt_withInvalidBase64Field_throwsBase64DecodeFailure() {
-        let outerDict: [String: Any] = [
-            "v":     1,
-            "alg":   "pbkdf2-sha256+xsalsa20",
-            "salt":  "not valid base64!!!",
-            "nonce": "dGVzdA",
-            "ct":    "dGVzdA",
-        ]
-        let qrString = String(
-            data: try! JSONSerialization.data(withJSONObject: outerDict),
-            encoding: .utf8
-        )!
-
-        XCTAssertThrowsError(
-            try KeyQRDecryptService.decrypt(qrString: qrString, pin: "any-pin")
-        ) { error in
-            guard case KeyQRDecryptError.base64DecodeFailure = error else {
-                return XCTFail("Expected KeyQRDecryptError.base64DecodeFailure, got \(error)")
-            }
-        }
-    }
-
-    // MARK: - Unsupported Version
-
-    /// A QR JSON where `v` is not `1` must throw
-    /// `KeyQRDecryptError.unsupportedVersion` immediately, before any attempt
-    /// to decode the payload or derive a key.
-    func test_decrypt_withUnsupportedVersion_throwsUnsupportedVersion() {
-        let outerDict: [String: Any] = [
-            "v":     99,
-            "alg":   "pbkdf2-sha256+xsalsa20",
-            "salt":  "dGVzdA",
-            "nonce": "dGVzdA",
-            "ct":    "dGVzdA",
-        ]
-        let qrString = String(
-            data: try! JSONSerialization.data(withJSONObject: outerDict),
-            encoding: .utf8
-        )!
-
-        XCTAssertThrowsError(
-            try KeyQRDecryptService.decrypt(qrString: qrString, pin: "any-pin")
-        ) { error in
-            guard case KeyQRDecryptError.unsupportedVersion = error else {
-                return XCTFail("Expected KeyQRDecryptError.unsupportedVersion, got \(error)")
-            }
-        }
-    }
-
-    // MARK: - Unsupported Algorithm
-
-    /// A QR JSON where `alg` is a value other than `"pbkdf2-sha256+xsalsa20"`
-    /// must throw `KeyQRDecryptError.unsupportedAlgorithm`, giving callers a
-    /// clear signal to upgrade the app rather than silently corrupting data.
-    func test_decrypt_withUnsupportedAlgorithm_throwsUnsupportedAlgorithm() {
-        let outerDict: [String: Any] = [
-            "v":     1,
-            "alg":   "aes-gcm",
-            "salt":  "dGVzdA",
-            "nonce": "dGVzdA",
-            "ct":    "dGVzdA",
-        ]
-        let qrString = String(
-            data: try! JSONSerialization.data(withJSONObject: outerDict),
-            encoding: .utf8
-        )!
-
-        XCTAssertThrowsError(
-            try KeyQRDecryptService.decrypt(qrString: qrString, pin: "any-pin")
-        ) { error in
+        XCTAssertThrowsError(try KeyQRDecryptService.decrypt(qrString: qr, pin: "111111")) { error in
             guard case KeyQRDecryptError.unsupportedAlgorithm = error else {
-                return XCTFail("Expected KeyQRDecryptError.unsupportedAlgorithm, got \(error)")
+                return XCTFail("expected unsupportedAlgorithm, got \(error)")
             }
         }
     }
 
-    // MARK: - Garbage QR String
+    func testANewerEnvelopeVersionIsRefused() {
+        let qr = envelope(payload: #"{"a":"b"}"#, pin: "111111", version: 2)
 
-    /// A string that is not JSON at all must throw
-    /// `KeyQRDecryptError.invalidQRFormat`. This covers the case where a
-    /// non-Neutrino QR code is accidentally scanned.
-    func test_decrypt_withGarbageQRString_throwsInvalidQRFormat() {
-        XCTAssertThrowsError(
-            try KeyQRDecryptService.decrypt(qrString: "not json at all", pin: "any-pin")
-        ) { error in
-            guard case KeyQRDecryptError.invalidQRFormat = error else {
-                return XCTFail("Expected KeyQRDecryptError.invalidQRFormat, got \(error)")
+        XCTAssertThrowsError(try KeyQRDecryptService.decrypt(qrString: qr, pin: "111111")) { error in
+            guard case KeyQRDecryptError.unsupportedVersion = error else {
+                return XCTFail("expected unsupportedVersion, got \(error)")
             }
+        }
+    }
+
+    /// Scanning the wrong QR code is the most likely mistake a user makes here, so the error names
+    /// what was scanned rather than reporting a crypto failure.
+    func testScanningSomethingThatIsNotAKeyCodeSaysSo() {
+        XCTAssertThrowsError(
+            try KeyQRDecryptService.decrypt(qrString: "https://example.com", pin: "111111")
+        ) { error in
+            guard case KeyQRDecryptError.invalidQRFormat(let raw) = error else {
+                return XCTFail("expected invalidQRFormat, got \(error)")
+            }
+            XCTAssertEqual(raw, "https://example.com")
         }
     }
 }

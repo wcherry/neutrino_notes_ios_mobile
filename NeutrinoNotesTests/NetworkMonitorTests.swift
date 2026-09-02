@@ -1,4 +1,5 @@
 import XCTest
+import NeutrinoCore
 @testable import NeutrinoNotes
 
 /// Tests for `NetworkMonitor`. Every test uses `autoStart: false` so the process never starts a

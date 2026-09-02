@@ -1,4 +1,6 @@
 import XCTest
+import NeutrinoCore
+import NeutrinoAuth
 @testable import NeutrinoNotes
 
 /// Tests for `LinksService` and the shapes it exchanges with Drive's link graph.

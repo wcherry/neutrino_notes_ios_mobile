@@ -1,5 +1,7 @@
 import XCTest
 import SwiftUI
+import NeutrinoAuth
+import NeutrinoUI
 @testable import NeutrinoNotes
 
 // MARK: - StubBiometricAuthenticator
