@@ -1,5 +1,7 @@
 import SwiftUI
 import Sodium
+import NeutrinoCore
+import NeutrinoAuth
 
 // MARK: - NoteEditorView
 

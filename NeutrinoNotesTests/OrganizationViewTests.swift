@@ -1,5 +1,7 @@
 import XCTest
 import SwiftUI
+import NeutrinoCore
+import NeutrinoAuth
 @testable import NeutrinoNotes
 
 /// Hosting tests for the Epic 12 screens. As in `VersionHistoryViewTests`, the point is that

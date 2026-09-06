@@ -20,6 +20,9 @@ struct OfflineNote: Codable, Identifiable, Hashable {
     var mimeType: String?
     /// base64url `crypto_box_seal` blob exactly as returned by `GET /files/{id}/key`.
     var sealedDEK: String
+    /// Which keyring version opens `sealedDEK`. Optional so an index written
+    /// before rotation existed still decodes; those entries are version 1.
+    var keyVersion: Int?
     /// `updatedAt` of the server version stored in `<id>.bin`.
     var serverModifiedAt: Date
     var cachedAt: Date

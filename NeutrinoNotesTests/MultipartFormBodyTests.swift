@@ -1,4 +1,5 @@
 import XCTest
+import NeutrinoCore
 @testable import NeutrinoNotes
 
 /// Tests for the multipart framing shared by note upload, autosave, and version save.

@@ -45,9 +45,11 @@ final class OfflineStoreTests: XCTestCase {
         let keyPair = sodium.box.keyPair()!
         let pubB64 = sodium.utils.bin2base64(keyPair.publicKey, variant: .URLSAFE_NO_PADDING)!
         let privB64 = sodium.utils.bin2base64(keyPair.secretKey, variant: .URLSAFE_NO_PADDING)!
-        KeychainService.save(pubB64, forKey: KeyImportService.publicKeyKeychainKey)
-        KeychainService.save(privB64, forKey: KeyImportService.privateKeyKeychainKey)
-        KeychainService.save("1", forKey: KeyImportService.keyVersionKeychainKey)
+        _ = pubB64; _ = privB64
+        KeyringStore.shared.store(Keyring(userId: KeyringTestSupport.testUserID, entries: [
+            KeyringEntry(version: 1, publicKey: keyPair.publicKey, secretKey: keyPair.secretKey,
+                         createdAt: "2026-08-20T00:00:00Z", retiredAt: nil)
+        ]))
         return keyPair
     }
 
@@ -77,7 +79,8 @@ final class OfflineStoreTests: XCTestCase {
         let sealedDEK = try content.sealDEK(dek)
         let note = OfflineNote(
             id: id, name: name, parentID: parentID, mimeType: NoteItem.markdownMIME,
-            sealedDEK: sealedDEK, serverModifiedAt: serverModifiedAt, cachedAt: Date(),
+            sealedDEK: sealedDEK.sealed, keyVersion: sealedDEK.keyVersion,
+            serverModifiedAt: serverModifiedAt, cachedAt: Date(),
             sizeBytes: Int64(text.utf8.count), pendingEdit: pendingEdit, conflict: conflict
         )
         return (note, dek)

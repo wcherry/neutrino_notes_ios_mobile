@@ -6,6 +6,9 @@ import CryptoKit
 struct KeyBundle {
     let publicKey: String
     let privateKey: String
+    /// Which keyring version this keypair *is*. The web app's mobile key code
+    /// sets it from the entry it exported, so on a rotated account it is not 1.
+    /// See `storeKeys(_:userId:)`.
     let keyVersion: String
 }
 
@@ -33,9 +36,6 @@ enum KeyImportError: LocalizedError {
 
 enum KeyImportService {
 
-    static let publicKeyKeychainKey  = "nn.encryption.public_key"
-    static let privateKeyKeychainKey = "nn.encryption.private_key"
-    static let keyVersionKeychainKey = "nn.encryption.key_version"
 
     // MARK: - importKey
 
@@ -88,29 +88,49 @@ enum KeyImportService {
 
     // MARK: - storeKeys
 
-    /// Persist a validated KeyBundle to the Keychain.
-    static func storeKeys(_ bundle: KeyBundle) {
-        KeychainService.save(bundle.publicKey,  forKey: publicKeyKeychainKey)
-        KeychainService.save(bundle.privateKey, forKey: privateKeyKeychainKey)
-        KeychainService.save(bundle.keyVersion, forKey: keyVersionKeychainKey)
+    /// Adopt an imported keypair as this device's keyring and store it.
+    ///
+    /// Adopted rather than replaced: the imported key is the identity everything
+    /// in that account is already sealed to, so minting a fresh one here would
+    /// orphan every file.
+    ///
+    /// `bundle.keyVersion` is honoured, not ignored. It used to be, because the
+    /// only thing that set it was the deleted key vault, where the field held
+    /// the *envelope format* version — a different quantity that happened to
+    /// share the name. The mobile key code sets it from the keyring entry it
+    /// exported, so on a rotated account it is the real version and filing the
+    /// key under 1 would make every recent note unopenable.
+    ///
+    /// This installs the active entry only. The account's retired versions come
+    /// from `KeyFileService`, which the caller runs next — it needs the key
+    /// stored here to open them.
+    @MainActor
+    @discardableResult
+    static func storeKeys(_ bundle: KeyBundle, userId: String) -> Bool {
+        guard let publicKey = Base64URL.decode(bundle.publicKey),
+              let secretKey = Base64URL.decode(bundle.privateKey)
+        else { return false }
+        let keyring = KeyringCoder.fromKeyPair(userId: userId,
+                                               publicKey: publicKey,
+                                               secretKey: secretKey,
+                                               version: Int(bundle.keyVersion) ?? 1)
+        return KeyringStore.shared.store(keyring)
     }
 
     // MARK: - hasStoredKeys
 
-    /// Returns true when all three Keychain entries are present.
+    @MainActor
     static func hasStoredKeys() -> Bool {
-        KeychainService.load(forKey: publicKeyKeychainKey)  != nil &&
-        KeychainService.load(forKey: privateKeyKeychainKey) != nil &&
-        KeychainService.load(forKey: keyVersionKeychainKey) != nil
+        KeyringStore.shared.hasKeyring
     }
 
     // MARK: - removeKeys
 
-    /// Deletes all three Keychain entries.
+    /// Forget this device's keyring. It survives only in the recovery kit or on
+    /// another paired device — there is no server copy.
+    @MainActor
     static func removeKeys() {
-        KeychainService.delete(forKey: publicKeyKeychainKey)
-        KeychainService.delete(forKey: privateKeyKeychainKey)
-        KeychainService.delete(forKey: keyVersionKeychainKey)
+        KeyringStore.shared.clear()
     }
 
     // MARK: - Private helpers

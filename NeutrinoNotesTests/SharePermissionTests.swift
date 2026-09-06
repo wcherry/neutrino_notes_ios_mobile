@@ -1,4 +1,5 @@
 import XCTest
+import NeutrinoCore
 @testable import NeutrinoNotes
 
 /// Tests for the models the share sheet renders: what a role means, and how a permission list is

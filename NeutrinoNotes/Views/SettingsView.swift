@@ -1,4 +1,6 @@
 import SwiftUI
+import NeutrinoAuth
+import NeutrinoUI
 
 struct SettingsView: View {
     @EnvironmentObject var authService: AuthService
@@ -6,7 +8,7 @@ struct SettingsView: View {
 
     @State private var hasKeys = KeyImportService.hasStoredKeys()
     @State private var showKeyImport = false
-    @State private var showVaultUnlock = false
+    @State private var showKeyRestore = false
     @State private var showRemoveConfirmation = false
 
     var body: some View {
@@ -33,34 +35,39 @@ struct SettingsView: View {
                     } label: {
                         Text("Remove Keys")
                     }
-                    .alert("Remove Encryption Keys?", isPresented: $showRemoveConfirmation) {
-                        Button("Remove", role: .destructive) {
+                    .alert("Forget this device's key?", isPresented: $showRemoveConfirmation) {
+                        Button("Forget", role: .destructive) {
                             KeyImportService.removeKeys()
                             hasKeys = false
                         }
                         Button("Cancel", role: .cancel) {}
                     } message: {
-                        Text("This will delete your stored encryption keys. You will need to re-import them to access encrypted notes.")
+                        // No server-side copy exists, so this is only safe if the
+                        // key survives somewhere else. Say so rather than implying
+                        // it can be fetched back.
+                        Text("This device will no longer be able to read your encrypted notes. Your key is not deleted — you can restore it from your recovery kit, or from another device that still has it. If neither exists, your notes become unreadable permanently.")
                     }
                 } else {
-                    // Preferred path: the key is already on the server, wrapped.
-                    // Unlocking with the encryption password fetches it here, so
-                    // no file has to be moved between devices.
+                    // The only two ways in, both offline: the printed recovery
+                    // kit, or a device that already holds the key. There is no
+                    // "create one" here — this account's files are sealed to an
+                    // identity that already exists.
                     Button {
-                        showVaultUnlock = true
+                        showKeyRestore = true
                     } label: {
-                        Label("Unlock with Password", systemImage: "lock.open")
+                        Label("Restore My Key", systemImage: "key.horizontal")
                     }
-                    .sheet(isPresented: $showVaultUnlock) {
+                    .sheet(isPresented: $showKeyRestore) {
                         hasKeys = KeyImportService.hasStoredKeys()
                     } content: {
-                        VaultUnlockView(isPresented: $showVaultUnlock) {
+                        KeyRestoreView(isPresented: $showKeyRestore) {
                             hasKeys = KeyImportService.hasStoredKeys()
                         }
+                        .environmentObject(authService)
                     }
 
-                    // Manual import stays for accounts created before the vault,
-                    // and for moving a key between accounts.
+                    // Manual import stays for key files exported by a build that
+                    // predates versioning.
                     Button {
                         showKeyImport = true
                     } label: {

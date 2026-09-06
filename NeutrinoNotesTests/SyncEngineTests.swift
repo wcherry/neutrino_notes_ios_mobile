@@ -1,5 +1,6 @@
 import XCTest
 import Sodium
+import NeutrinoCore
 @testable import NeutrinoNotes
 
 // MARK: - FakeSyncError
@@ -98,14 +99,9 @@ final class SyncEngineTests: XCTestCase {
     /// Generates a real Curve25519 key pair and stores it in the Keychain under the same keys
     /// KeyImportService uses — identical to `OfflineStoreTests.storeRealKeyPair()`.
     @discardableResult
+    @MainActor
     private func storeRealKeyPair() -> Box.KeyPair {
-        let keyPair = sodium.box.keyPair()!
-        let pubB64 = sodium.utils.bin2base64(keyPair.publicKey, variant: .URLSAFE_NO_PADDING)!
-        let privB64 = sodium.utils.bin2base64(keyPair.secretKey, variant: .URLSAFE_NO_PADDING)!
-        KeychainService.save(pubB64, forKey: KeyImportService.publicKeyKeychainKey)
-        KeychainService.save(privB64, forKey: KeyImportService.privateKeyKeychainKey)
-        KeychainService.save("1", forKey: KeyImportService.keyVersionKeychainKey)
-        return keyPair
+        KeyringTestSupport.installKeyring()
     }
 
     private func makeStore() -> OfflineStore {
@@ -131,7 +127,8 @@ final class SyncEngineTests: XCTestCase {
         let sealedDEK = try content.sealDEK(dek)
         let note = OfflineNote(
             id: id, name: name, parentID: nil, mimeType: NoteItem.markdownMIME,
-            sealedDEK: sealedDEK, serverModifiedAt: serverModifiedAt, cachedAt: Date(),
+            sealedDEK: sealedDEK.sealed, keyVersion: sealedDEK.keyVersion,
+            serverModifiedAt: serverModifiedAt, cachedAt: Date(),
             sizeBytes: Int64(text.utf8.count), pendingEdit: pendingEdit, conflict: conflict
         )
         return (note, dek)

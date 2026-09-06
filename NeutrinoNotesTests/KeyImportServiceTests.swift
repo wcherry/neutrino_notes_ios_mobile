@@ -14,11 +14,13 @@ final class KeyImportServiceTests: XCTestCase {
 
     // MARK: - Lifecycle
 
+    @MainActor
     override func setUp() {
         super.setUp()
         KeyImportService.removeKeys()
     }
 
+    @MainActor
     override func tearDown() {
         super.tearDown()
         KeyImportService.removeKeys()
@@ -225,43 +227,37 @@ final class KeyImportServiceTests: XCTestCase {
 
     /// After removeKeys() (called in setUp), hasStoredKeys() must return false
     /// because no encryption keys are present in the Keychain.
+    @MainActor
     func test_hasStoredKeys_withNoKeysInKeychain_returnsFalse() {
         // setUp already called removeKeys(); this verifies the post-condition.
         XCTAssertFalse(KeyImportService.hasStoredKeys())
     }
 
-    /// Manually saving all three key entries via KeychainService causes
-    /// hasStoredKeys() to return true.
-    func test_hasStoredKeys_afterManualSaveOfAllThreeKeys_returnsTrue() {
-        KeychainService.save("fake-public-key",  forKey: KeyImportService.publicKeyKeychainKey)
-        KeychainService.save("fake-private-key", forKey: KeyImportService.privateKeyKeychainKey)
-        KeychainService.save("1",                forKey: KeyImportService.keyVersionKeychainKey)
+    /// Installing a keyring makes hasStoredKeys() true. The three loose entries
+    /// it used to check are gone — one item now holds the whole keyring.
+    @MainActor
+    func test_hasStoredKeys_afterInstallingAKeyring_returnsTrue() {
+        KeyringTestSupport.installKeyring()
 
         XCTAssertTrue(KeyImportService.hasStoredKeys())
     }
 
     // MARK: - removeKeys
 
-    /// After manually saving all three key entries and calling removeKeys(),
-    /// loading each individual Keychain key must return nil.
-    func test_removeKeys_afterManualSave_clearsAllThreeKeychainEntries() {
-        KeychainService.save("fake-public-key",  forKey: KeyImportService.publicKeyKeychainKey)
-        KeychainService.save("fake-private-key", forKey: KeyImportService.privateKeyKeychainKey)
-        KeychainService.save("1",                forKey: KeyImportService.keyVersionKeychainKey)
+    /// removeKeys() forgets this device's keyring.
+    ///
+    /// Worth being precise about what that means now: there is no server-side
+    /// copy to fetch back, so this is only recoverable from the printed kit or
+    /// another paired device.
+    @MainActor
+    func test_removeKeys_forgetsTheKeyring() {
+        KeyringTestSupport.installKeyring()
 
         KeyImportService.removeKeys()
 
-        XCTAssertNil(
-            KeychainService.load(forKey: KeyImportService.publicKeyKeychainKey),
-            "public key Keychain entry must be nil after removeKeys()"
-        )
-        XCTAssertNil(
-            KeychainService.load(forKey: KeyImportService.privateKeyKeychainKey),
-            "private key Keychain entry must be nil after removeKeys()"
-        )
-        XCTAssertNil(
-            KeychainService.load(forKey: KeyImportService.keyVersionKeychainKey),
-            "key version Keychain entry must be nil after removeKeys()"
-        )
+        XCTAssertFalse(KeyImportService.hasStoredKeys())
+        XCTAssertNil(KeyringStore.shared.load())
     }
+
+    // MARK: - removeKeys
 }

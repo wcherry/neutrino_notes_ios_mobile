@@ -1,6 +1,8 @@
 import Foundation
 import Sodium
 import os.log
+import NeutrinoCore
+import NeutrinoAuth
 
 // MARK: - SharingError
 
@@ -125,7 +127,7 @@ final class SharingService: ObservableObject {
 
     /// Public keys already fetched this session, so re-sharing several notes with the same person
     /// costs one directory lookup rather than one per note.
-    private var publicKeysByUserID: [String: String] = [:]
+    private var publicKeysByUserID: [String: (publicKey: String, keyVersion: Int)] = [:]
 
     private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "NeutrinoNotes",
                                 category: "SharingService")
@@ -343,11 +345,16 @@ final class SharingService: ObservableObject {
             logger.debug("shareKey: file \(fileID, privacy: .public) has no key ref — nothing to share")
             return .filePlaintext
         }
-        let dek: Bytes = try content.unsealDEK(sealedForMe)
-        let sealedForRecipient = try content.seal(dek, toRecipientPublicKey: recipientKey)
+        // Opening uses *our* key version — the one this file was sealed to.
+        // Re-sealing uses the *recipient's* current version, which is what they
+        // will resolve it against on their own device.
+        let dek: Bytes = try content.unsealDEK(sealedForMe.sealed, keyVersion: sealedForMe.keyVersion)
+        let sealedForRecipient = try content.seal(dek, toRecipientPublicKey: recipientKey.publicKey)
         try await postWithoutResponse(
             "/api/v1/drive/files/\(fileID)/key/share",
-            body: APIShareFileKeyRequest(recipientId: userID, encryptedFileKey: sealedForRecipient)
+            body: APIShareFileKeyRequest(recipientId: userID,
+                                         encryptedFileKey: sealedForRecipient,
+                                         keyVersion: recipientKey.keyVersion)
         )
         logger.debug("shareKey: delivered key for \(fileID, privacy: .public) to \(userID, privacy: .public)")
         return .delivered
@@ -373,16 +380,18 @@ final class SharingService: ObservableObject {
         return result
     }
 
-    /// A user's registered Curve25519 public key, or nil when they have not imported one. Cached
-    /// per session, including the "no key" answer, which the share sheet renders as a warning.
-    func publicKey(for userID: String) async throws -> String? {
+    /// A user's registered Curve25519 public key and its version, or nil when they have not
+    /// set one up. Cached per session, including the "no key" answer, which the share sheet
+    /// renders as a warning.
+    func publicKey(for userID: String) async throws -> (publicKey: String, keyVersion: Int)? {
         if let cached = publicKeysByUserID[userID] { return cached }
         if keyStatusByUserID[userID] == .missing { return nil }
         do {
             let response: APIPublicKeyResponse = try await get("/api/v1/auth/users/\(userID)/public-key")
-            publicKeysByUserID[userID] = response.publicKey
+            let entry = (publicKey: response.publicKey, keyVersion: response.version ?? 1)
+            publicKeysByUserID[userID] = entry
             keyStatusByUserID[userID] = .present
-            return response.publicKey
+            return entry
         } catch SharingError.serverError(statusCode: 404) {
             keyStatusByUserID[userID] = .missing
             return nil
@@ -569,11 +578,24 @@ private struct APIUpdatePermissionRequest: Encodable {
 private struct APIShareFileKeyRequest: Encodable {
     let recipientId: String
     let encryptedFileKey: String
+    /// The *recipient's* key version, not ours — it is what they resolve the
+    /// sealed DEK against.
+    let keyVersion: Int
 }
 
 private struct APIPublicKeyResponse: Decodable {
     let userId: String
     let publicKey: String
+    /// Which entry of the user's keyring this is.
+    ///
+    /// The field is `version` on the wire, not `keyVersion` — see `PublicKeyResponse` in
+    /// `src/auth/dto.rs`. Decoding it under the wrong name made this silently nil, so every share
+    /// recorded `keyVersion: 1` on the recipient's ref no matter which key it was actually sealed
+    /// to, and a recipient who had rotated could not open the note.
+    ///
+    /// Still optional: a server that predates versioning omits it, and those published exactly one
+    /// key, which is version 1.
+    let version: Int?
 }
 
 /// Just enough of a folder listing to find the notes inside it.

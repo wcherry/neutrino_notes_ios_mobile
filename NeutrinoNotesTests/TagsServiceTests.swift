@@ -1,4 +1,6 @@
 import XCTest
+import NeutrinoCore
+import NeutrinoAuth
 @testable import NeutrinoNotes
 
 /// Tests for `TagsService`'s cache behaviour — the parts that decide what the tag UI shows.

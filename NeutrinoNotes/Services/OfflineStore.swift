@@ -119,7 +119,7 @@ final class OfflineStore: ObservableObject {
         logger.debug("download: id=\(item.id, privacy: .public)")
 
         let ciphertext: Data
-        let sealedDEK: String
+        let sealedDEK: (sealed: String, keyVersion: Int)
         do {
             (ciphertext, sealedDEK) = try await content.downloadEncrypted(for: item)
         } catch {
@@ -129,7 +129,7 @@ final class OfflineStore: ObservableObject {
 
         // Decrypt once, in memory only, both to verify the blob is readable with this device's
         // key pair before it is cached and to record the plaintext size for display.
-        let dek = try unseal(sealedDEK, using: content)
+        let dek = try unseal(sealedDEK.sealed, keyVersion: sealedDEK.keyVersion, using: content)
         let plaintext = try decrypt(ciphertext, dek: dek, using: content)
 
         // Prefer the server's authoritative timestamp; fall back to the listing's if the
@@ -144,13 +144,15 @@ final class OfflineStore: ObservableObject {
 
         var note = self.note(id: item.id) ?? OfflineNote(
             id: item.id, name: item.name, parentID: item.parentID, mimeType: item.mimeType,
-            sealedDEK: sealedDEK, serverModifiedAt: serverModifiedAt, cachedAt: Date(),
+            sealedDEK: sealedDEK.sealed, keyVersion: sealedDEK.keyVersion,
+            serverModifiedAt: serverModifiedAt, cachedAt: Date(),
             sizeBytes: Int64(plaintext.utf8.count), pendingEdit: nil, conflict: nil
         )
         note.name = item.name
         note.parentID = item.parentID
         note.mimeType = item.mimeType ?? note.mimeType
-        note.sealedDEK = sealedDEK
+        note.sealedDEK = sealedDEK.sealed
+        note.keyVersion = sealedDEK.keyVersion
         note.serverModifiedAt = serverModifiedAt
         note.cachedAt = Date()
         if note.pendingEdit == nil { note.sizeBytes = Int64(plaintext.utf8.count) }
@@ -190,7 +192,7 @@ final class OfflineStore: ObservableObject {
         guard let note = note(id: id) else { throw OfflineStoreError.notCached }
         guard let content = noteContentService else { throw OfflineStoreError.noEncryptionKey }
 
-        let dek = try unseal(note.sealedDEK, using: content)
+        let dek = try unseal(note.sealedDEK, keyVersion: note.keyVersion ?? 1, using: content)
 
         // Fall back to the base version if the pending blob went missing (interrupted write,
         // manual cache surgery): better a stale read than a hard failure.
@@ -370,9 +372,9 @@ final class OfflineStore: ObservableObject {
 
     // MARK: - Crypto Helpers
 
-    private func unseal(_ sealedDEK: String, using content: NoteContentService) throws -> Bytes {
+    private func unseal(_ sealedDEK: String, keyVersion: Int, using content: NoteContentService) throws -> Bytes {
         do {
-            return try content.unsealDEK(sealedDEK)
+            return try content.unsealDEK(sealedDEK, keyVersion: keyVersion)
         } catch NoteContentError.noEncryptionKey {
             throw OfflineStoreError.noEncryptionKey
         } catch {

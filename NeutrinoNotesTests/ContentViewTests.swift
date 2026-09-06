@@ -1,5 +1,7 @@
 import XCTest
 import SwiftUI
+import NeutrinoCore
+import NeutrinoAuth
 @testable import NeutrinoNotes
 
 @MainActor

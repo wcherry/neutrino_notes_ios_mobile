@@ -1,4 +1,6 @@
 import SwiftUI
+import NeutrinoCore
+import NeutrinoAuth
 
 struct ContentView: View {
     @EnvironmentObject var offlineStore: OfflineStore

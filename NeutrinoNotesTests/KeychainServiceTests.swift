@@ -1,4 +1,6 @@
 import XCTest
+import NeutrinoCore
+import NeutrinoAuth
 @testable import NeutrinoNotes
 
 final class KeychainServiceTests: XCTestCase {

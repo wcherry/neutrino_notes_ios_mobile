@@ -1,6 +1,8 @@
 import XCTest
 import SwiftUI
 import Sodium
+import NeutrinoCore
+import NeutrinoAuth
 @testable import NeutrinoNotes
 
 /// Hosting tests for the version-history screens. Like ContentViewTests, the point is that
