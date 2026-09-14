@@ -39,6 +39,34 @@ enum WikiLink {
         displayTitle(for: title).lowercased()
     }
 
+    // MARK: - Relative Markdown Links
+
+    /// The note a relative `[text](destination)` link names, or nil when the destination is not a
+    /// reference to another note in this drive.
+    ///
+    /// `[Help](Help.md)` is the other way Markdown says "that note over there", and the one a
+    /// writer arriving from any other Markdown editor reaches for. It has to be resolved here
+    /// because nothing else can: a bare file name is not something `openURL` can be handed, so
+    /// such a link renders as a link and then does nothing at all.
+    ///
+    /// Only the file name is kept, because Drive resolves *titles* and not paths — there is no
+    /// notion of "the folder this note is in" to resolve `../` against. So `./notes/Help.md` and
+    /// `[[Help]]` find the same note, and both find nothing if no note by that name is known.
+    ///
+    /// A destination with a scheme is somebody else's: `https:`, `mailto:`, `tel:`, and the
+    /// `nn-wikilink:`/`nn-footnote:` schemes this app mints for links it has already handled.
+    static func title(forRelativeLink url: URL) -> String? {
+        guard url.scheme == nil else { return nil }
+        // A fragment-only link (`#section`) is an anchor inside the note being read; it names no
+        // file, and `lastPathComponent` is empty for it.
+        let name = url.lastPathComponent
+        let decoded = (name.removingPercentEncoding ?? name)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        // "/", "." and ".." are what a path with no file name at the end reduces to.
+        guard !decoded.isEmpty, !["/", ".", ".."].contains(decoded) else { return nil }
+        return decoded
+    }
+
     // MARK: - Match
 
     /// One `[[…]]` occurrence in a piece of text.

@@ -241,6 +241,7 @@ struct NoteEditorView: View {
                     wikiLinkIndex: wikiLinkIndex,
                     backlinks: linksService.backlinks(for: item.id),
                     onWikiLinkTap: { title in open(wikiLinkTitle: title) },
+                    onLinkTap: { url in open(markdownLink: url) },
                     onBacklinkTap: { link in open(backlink: link) }
                 )
             } else {
@@ -834,6 +835,45 @@ struct NoteEditorView: View {
         }
     }
 
+    /// Opens a tapped `[text](destination)` link: a note in this stack, another Neutrino file in
+    /// the app that owns it, and anything else wherever iOS decides it belongs.
+    ///
+    /// A link to a sibling note (`[Help](Help.md)`) never reaches here — it is an internal
+    /// reference, and `MarkdownInlineRenderer.linkURL(forDestination:)` renders it as the same
+    /// `nn-wikilink://` link a `[[Help]]` produces, so it arrives at `open(wikiLinkTitle:)`.
+    private func open(markdownLink url: URL) {
+        guard let destination = NeutrinoAppLink.destination(from: url) else {
+            openExternally(url)
+            return
+        }
+        guard destination.kind == .note else {
+            openExternally(url)
+            return
+        }
+        Task {
+            if let note = notesDriveService.item(id: destination.fileID) {
+                noteRouter.open(note)
+                return
+            }
+            do {
+                noteRouter.open(try await notesDriveService.fetchItem(id: destination.fileID))
+            } catch {
+                linkError = error.localizedDescription
+            }
+        }
+    }
+
+    /// Hands a link to iOS, and says so when iOS declines it.
+    ///
+    /// Silence is the wrong answer to a tap: a link the system can do nothing with is
+    /// indistinguishable, from the reader's side, from an app that dropped the tap on the floor.
+    private func openExternally(_ url: URL) {
+        openURL(url) { accepted in
+            guard !accepted else { return }
+            linkError = "\u{201C}\(url.absoluteString)\u{201D} can\u{2019}t be opened from Notes."
+        }
+    }
+
     /// Opens a backlink: a note in this app, anything else in the app that owns it.
     ///
     /// The link graph is drive-wide, so a note can be linked from a doc or a sheet. Handing those
@@ -859,7 +899,7 @@ struct NoteEditorView: View {
             linkError = "\u{201C}\(link.displayTitle)\u{201D} can\u{2019}t be opened from Notes."
             return
         }
-        openURL(url)
+        openExternally(url)
     }
 
     /// Creates the note a link points at and, unless the caller is mid-typing, opens it.

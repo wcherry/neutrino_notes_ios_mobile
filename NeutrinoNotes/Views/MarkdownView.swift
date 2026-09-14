@@ -40,6 +40,9 @@ struct MarkdownView: View {
     /// Called with the raw title when a wiki link is tapped, resolved or not. Absent means wiki
     /// links render but do nothing, which is what a read-only preview wants.
     var onWikiLinkTap: ((String) -> Void)?
+    /// Called with the destination when a regular Markdown link is tapped. Absent means the URL is
+    /// opened by the system, which is what a read-only preview wants.
+    var onLinkTap: ((URL) -> Void)?
     var onBacklinkTap: ((FileLink) -> Void)?
 
     @Namespace private var footnoteNamespace
@@ -85,13 +88,15 @@ struct MarkdownView: View {
                     onWikiLinkTap(title)
                     return .handled
                 }
-                guard url.scheme == "nn-footnote" else {
-                    return .systemAction
+                if url.scheme == "nn-footnote" {
+                    let label = url.host ?? url.absoluteString.replacingOccurrences(of: "nn-footnote://", with: "")
+                    withAnimation {
+                        proxy.scrollTo("footnote-\(label)", anchor: .top)
+                    }
+                    return .handled
                 }
-                let label = url.host ?? url.absoluteString.replacingOccurrences(of: "nn-footnote://", with: "")
-                withAnimation {
-                    proxy.scrollTo("footnote-\(label)", anchor: .top)
-                }
+                guard let onLinkTap else { return .systemAction }
+                onLinkTap(url)
                 return .handled
             })
         }

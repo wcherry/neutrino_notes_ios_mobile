@@ -18,6 +18,25 @@ enum MarkdownInlineRenderer {
         return URL(string: "\(wikiLinkScheme)://\(encoded)")
     }
 
+    /// The URL a `[text](destination)` link is rendered with.
+    ///
+    /// A *relative* destination — `[Help](Help.md)`, `[Help](./notes/Help.md)` — is a reference to
+    /// another note in this drive, not to anything the system can open, so it is rendered as the
+    /// same `nn-wikilink://` link a `[[Help]]` produces and leaves the view by the same route.
+    ///
+    /// Without this such a link is still a perfectly valid `URL`, so it renders blue and tappable
+    /// and then does nothing at all: `openURL` has no scheme to dispatch on and silently declines
+    /// a bare file name. Rendering it as what it is means one internal-link path for both
+    /// spellings, including the offer to create a note that doesn't exist yet.
+    ///
+    /// With `noteLinks` off there is no internal-link route to take, so the destination is left as
+    /// the author wrote it and the tap is handled as an external link would be.
+    static func linkURL(forDestination destination: String) -> URL? {
+        guard let url = URL(string: destination) else { return nil }
+        guard FeatureFlags.noteLinks, let title = WikiLink.title(forRelativeLink: url) else { return url }
+        return wikiLinkURL(for: title)
+    }
+
     /// The title inside a `nn-wikilink://` URL, or nil if that isn't what this is.
     static func wikiLinkTitle(from url: URL) -> String? {
         guard url.scheme == wikiLinkScheme else { return nil }
@@ -63,7 +82,8 @@ enum MarkdownInlineRenderer {
             return attributed
 
         case .link(let inlines, let destination):
-            return renderChildren(inlines, intent: intent, link: URL(string: destination), resolvedTitles: resolvedTitles)
+            return renderChildren(inlines, intent: intent, link: linkURL(forDestination: destination),
+                                  resolvedTitles: resolvedTitles)
 
         case .wikiLink(let title):
             // The brackets are dropped: the title is what the writer meant to read as a link, and
