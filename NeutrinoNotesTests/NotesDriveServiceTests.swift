@@ -288,7 +288,7 @@ final class NotesDriveServiceTests: XCTestCase {
     /// The MIME this app writes has to be the one Drive's `type=note` listing matches, or notes
     /// created here never come back in a listing.
     func test_theNoteMIMEMatchesDrivesNativeNoteType() {
-        XCTAssertEqual(NoteItem.markdownMIME, "application/x-neutrino-note")
+        XCTAssertEqual(NoteItem.markdownMIME, "text/markdown")
     }
 
     // MARK: - Epic 12: items(in: .tags)

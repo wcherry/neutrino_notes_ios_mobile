@@ -170,7 +170,7 @@ final class TagsServiceTests: XCTestCase {
 
     func test_taggedFileResponse_decodesTheFullFileShape() throws {
         let json = """
-        {"files":[{"id":"f1","name":"Meeting Notes.md","mimeType":"application/x-neutrino-note",
+        {"files":[{"id":"f1","name":"Meeting Notes.md","mimeType":"text/markdown",
                    "sizeBytes":512,"folderId":"dir-1","isStarred":true,
                    "createdAt":"2026-07-30T14:25:36","updatedAt":"2026-07-30T15:00:00",
                    "contentVersion":3}],
@@ -194,7 +194,7 @@ final class TagsServiceTests: XCTestCase {
     /// A server predating the full file shape still lists a tag's notes, just without stars.
     func test_taggedFileResponse_withoutTheStarFlag_decodesAsUnstarred() throws {
         let json = """
-        {"files":[{"id":"f1","name":"Old.md","mimeType":"application/x-neutrino-note",
+        {"files":[{"id":"f1","name":"Old.md","mimeType":"text/markdown",
                    "sizeBytes":10,"folderId":null,"updatedAt":"2026-07-30T15:00:00"}],
          "total":1}
         """

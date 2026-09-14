@@ -31,7 +31,7 @@ final class MultipartFormBodyTests: XCTestCase {
     func test_fieldAndFile_matchTheExpectedWireFormat() {
         var form = MultipartFormBody(boundary: "B")
         form.appendField(name: "label", value: "Before the rewrite")
-        form.appendFile(name: "file", fileName: "Notes.md", mimeType: "application/x-neutrino-note",
+        form.appendFile(name: "file", fileName: "Notes.md", mimeType: "text/markdown",
                         data: Data("ciphertext".utf8))
 
         XCTAssertEqual(string(form), """
@@ -41,7 +41,7 @@ final class MultipartFormBodyTests: XCTestCase {
         Before the rewrite\r
         --B\r
         Content-Disposition: form-data; name="file"; filename="Notes.md"\r
-        Content-Type: application/x-neutrino-note\r
+        Content-Type: text/markdown\r
         \r
         ciphertext\r
         --B--\r

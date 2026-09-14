@@ -12,7 +12,7 @@ final class NoteFileInfoTests: XCTestCase {
         Data("""
         {"id":"f1","name":"Meeting Notes.md","sizeBytes":512,"folderId":"dir-1",
          "deletedAt":\(deletedAt),"yourRole":"\(role)","storagePath":"/x",
-         "mimeType":"application/x-neutrino-note","createdAt":"2026-07-30T14:25:36",
+         "mimeType":"text/markdown","createdAt":"2026-07-30T14:25:36",
          "updatedAt":"2026-07-30T15:00:00","tags":[]}
         """.utf8)
     }
