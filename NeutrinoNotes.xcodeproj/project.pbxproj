@@ -54,6 +54,7 @@
 		64AFEEA41F8B2AC71541E99A /* TagPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B60277956A201C65D17DBA28 /* TagPickerSheet.swift */; };
 		6599933960C2B84E9796842B /* OfflineNote.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F3BB49B2701A5C8A46A9176 /* OfflineNote.swift */; };
 		6782F536CA210ACB64059E01 /* FileEventsClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CDC20736D9F0DAD18226F4F /* FileEventsClientTests.swift */; };
+		6AB43FE4F55FE222D24A408B /* KeyringStatusServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 643CE8DD5B98083E2A0694D4 /* KeyringStatusServiceTests.swift */; };
 		6F51533DD0BE3D971209335C /* NoteItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31FABE1B1C4487D59970C55B /* NoteItem.swift */; };
 		70095AAF59286BEBA823F4BA /* NetworkMonitorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 157CE7BAEDEACBE01C92B9DB /* NetworkMonitorTests.swift */; };
 		701AAD97A8B7939C4426C70A /* NoteVersionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A710DA82258EF68EE5A8FC /* NoteVersionTests.swift */; };
@@ -101,6 +102,7 @@
 		C3B19DB6AF34D12B7C23014C /* KeyImportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6486092B284D2187F1F263CD /* KeyImportService.swift */; };
 		C77BE9552899748B24DECDDA /* KeyRestoreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A594E53614C8DDE035A07210 /* KeyRestoreView.swift */; };
 		C7E90C1FE8257D1CA4E2DEB4 /* KeyImportServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 447D9AB82FA723893475CFB4 /* KeyImportServiceTests.swift */; };
+		C7EFFB582E6BD8AE715F60B4 /* KeyringStatusService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F64ABEC40A70D5700155FF8 /* KeyringStatusService.swift */; };
 		C97C4EEABA1ED39D2A932485 /* TaggedNotesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 345F1AD94450DF8BD0FFC4FF /* TaggedNotesView.swift */; };
 		CBC1D8DE753A23B32EC3B62F /* SlashCommandMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 573D593D50ED8B13028CF251 /* SlashCommandMenu.swift */; };
 		CBEEEE5E031948B9AA03864F /* SharePermission.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2061DDC759F5FC5D8A6652A7 /* SharePermission.swift */; };
@@ -161,6 +163,7 @@
 		1ACD6ED18D5DF8EFEA84E5E5 /* SyncEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncEngine.swift; sourceTree = "<group>"; };
 		1BFA4C49AC84B143E70F7B6C /* KeyQRDecryptServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyQRDecryptServiceTests.swift; sourceTree = "<group>"; };
 		1F422153B4F117E9B6639084 /* PinStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinStoreTests.swift; sourceTree = "<group>"; };
+		1F64ABEC40A70D5700155FF8 /* KeyringStatusService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyringStatusService.swift; sourceTree = "<group>"; };
 		201B79AA98629E1D8F05A2A3 /* NoteBrowserView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteBrowserView.swift; sourceTree = "<group>"; };
 		2061DDC759F5FC5D8A6652A7 /* SharePermission.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharePermission.swift; sourceTree = "<group>"; };
 		21FEEF649844D53ABC12598E /* MarkdownSlashCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownSlashCommand.swift; sourceTree = "<group>"; };
@@ -194,6 +197,7 @@
 		5DC4A626723A5D834F758F77 /* OfflineStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineStore.swift; sourceTree = "<group>"; };
 		609F30B2568474CDF1BBCFBA /* VersionHistoryServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VersionHistoryServiceTests.swift; sourceTree = "<group>"; };
 		636865B6AEF281BFFB466D2C /* MarkdownParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownParserTests.swift; sourceTree = "<group>"; };
+		643CE8DD5B98083E2A0694D4 /* KeyringStatusServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyringStatusServiceTests.swift; sourceTree = "<group>"; };
 		6486092B284D2187F1F263CD /* KeyImportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyImportService.swift; sourceTree = "<group>"; };
 		64F6DBB562CA4F6B3A1E0273 /* WikiLinkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WikiLinkTests.swift; sourceTree = "<group>"; };
 		66E29EE64BF0E0F1E7D1142B /* WikiLinkMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WikiLinkMenu.swift; sourceTree = "<group>"; };
@@ -354,6 +358,7 @@
 				6486092B284D2187F1F263CD /* KeyImportService.swift */,
 				EB6F598EC4D585DD519C49C2 /* KeyQRDecryptService.swift */,
 				057A6D0DE2728F1FFABB0441 /* Keyring.swift */,
+				1F64ABEC40A70D5700155FF8 /* KeyringStatusService.swift */,
 				8C87F5BD319621451C578F44 /* KeyringStore.swift */,
 				67C53FC498B266A41BE987B6 /* LinksService.swift */,
 				045B7576B50710BFE8948F54 /* NoteContentService.swift */,
@@ -411,6 +416,7 @@
 				9F400610D365A7887500DB07 /* KeyFileServiceTests.swift */,
 				447D9AB82FA723893475CFB4 /* KeyImportServiceTests.swift */,
 				1BFA4C49AC84B143E70F7B6C /* KeyQRDecryptServiceTests.swift */,
+				643CE8DD5B98083E2A0694D4 /* KeyringStatusServiceTests.swift */,
 				5229B6D736F752A94C73D3D5 /* KeyringTests.swift */,
 				ECA137AD70D5AA7CAB829078 /* KeyringTestSupport.swift */,
 				A442D04B675A4E093413CE01 /* LinksServiceTests.swift */,
@@ -615,6 +621,7 @@
 				58543D437FC2775457B82BB5 /* KeyQRImportView.swift in Sources */,
 				C77BE9552899748B24DECDDA /* KeyRestoreView.swift in Sources */,
 				548673CB48E66B805C146BEC /* Keyring.swift in Sources */,
+				C7EFFB582E6BD8AE715F60B4 /* KeyringStatusService.swift in Sources */,
 				81A7B0BC66D999611B390DF7 /* KeyringStore.swift in Sources */,
 				4224E691873EE46B25577D25 /* LinksService.swift in Sources */,
 				A728BC3179C31AB0C2486BD3 /* LockScreenView.swift in Sources */,
@@ -687,6 +694,7 @@
 				C7E90C1FE8257D1CA4E2DEB4 /* KeyImportServiceTests.swift in Sources */,
 				F4E6710B02FF7F6F63CC9F64 /* KeyQRDecryptServiceTests.swift in Sources */,
 				08BBEFBB169BFE4EBA60F3DB /* KeychainServiceTests.swift in Sources */,
+				6AB43FE4F55FE222D24A408B /* KeyringStatusServiceTests.swift in Sources */,
 				0BE359F224D42A5CEEEC687A /* KeyringTestSupport.swift in Sources */,
 				AE966A40C06AC7D73E70CE0E /* KeyringTests.swift in Sources */,
 				92A3AF9C1170EC51CAF8F0D7 /* LinksServiceTests.swift in Sources */,
@@ -743,7 +751,7 @@
 				CODE_SIGN_ENTITLEMENTS = NeutrinoNotes/NeutrinoNotes.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 9;
 				DEVELOPMENT_TEAM = 46KWJJ63FU;
 				INFOPLIST_FILE = NeutrinoNotes/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
@@ -925,7 +933,7 @@
 				CODE_SIGN_ENTITLEMENTS = NeutrinoNotes/NeutrinoNotes.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 9;
 				DEVELOPMENT_TEAM = 46KWJJ63FU;
 				INFOPLIST_FILE = NeutrinoNotes/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;

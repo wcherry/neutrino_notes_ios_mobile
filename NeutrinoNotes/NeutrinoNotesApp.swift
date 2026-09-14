@@ -21,6 +21,7 @@ struct NeutrinoNotesApp: App {
     @StateObject private var appLockService: AppLockService
     @StateObject private var deepLinkRouter: DeepLinkRouter
     @StateObject private var linksService: LinksService
+    @StateObject private var keyringStatus: KeyringStatusService
 
     @Environment(\.scenePhase) private var scenePhase
 
@@ -40,6 +41,7 @@ struct NeutrinoNotesApp: App {
         _appLockService = StateObject(wrappedValue: AppLockService())
         _deepLinkRouter = StateObject(wrappedValue: DeepLinkRouter())
         _linksService = StateObject(wrappedValue: LinksService())
+        _keyringStatus = StateObject(wrappedValue: KeyringStatusService())
 
         let noteContentService = NoteContentService()
         let networkMonitor = NetworkMonitor()
@@ -74,6 +76,7 @@ struct NeutrinoNotesApp: App {
                 .environmentObject(appLockService)
                 .environmentObject(deepLinkRouter)
                 .environmentObject(linksService)
+                .environmentObject(keyringStatus)
                 .onOpenURL { url in
                     guard FeatureFlags.appLinks else { return }
                     deepLinkRouter.handle(url)
@@ -103,6 +106,12 @@ struct NeutrinoNotesApp: App {
                     if authService.isAuthenticated && KeyringStore.shared.hasKeyring {
                         try? await KeyFileService.shared.restoreArchivedKeys(using: authService)
                     }
+
+                    // Whether this device can read anything at all. No round trip — the keyring is
+                    // client-only — so this is a Keychain read, and it is what turns a note that
+                    // refuses to open into a prompt for the recovery kit at sign-in.
+                    keyringStatus.authService = authService
+                    if authService.isAuthenticated { await keyringStatus.refresh() }
                 }
         }
         .onChange(of: scenePhase) { newPhase in
@@ -128,10 +137,16 @@ struct NeutrinoNotesApp: App {
 private struct RootContentView: View {
     @EnvironmentObject var authService: AuthService
     @EnvironmentObject var appLockService: AppLockService
+    @EnvironmentObject var keyringStatus: KeyringStatusService
 
     /// False while the scene is backgrounded *or* merely inactive — the privacy shield has to be
     /// up before iOS takes the app-switcher snapshot, and that happens during `.inactive`.
     let isSceneActive: Bool
+
+    @State private var showsRestore = false
+    /// Offered once per launch. Somebody who dismissed it gets back through Settings › Encryption
+    /// Key, and every note that needs the keyring still says so when opened.
+    @State private var hasOfferedRestore = false
 
     var body: some View {
         Group {
@@ -149,6 +164,32 @@ private struct RootContentView: View {
             if authService.isAuthenticated {
                 await authService.refreshTokenIfNeeded()
             }
+        }
+        .sheet(isPresented: $showsRestore) {
+            KeyRestoreView(isPresented: $showsRestore) {
+                Task { await keyringStatus.refresh() }
+            }
+            .environmentObject(authService)
+        }
+        // Prompted rather than blocked, matching the other Neutrino apps. The list still draws and
+        // Settings still opens — which matters, because the recovery kit and pairing routes live
+        // there — so a hard gate would lock the user out of their own way back in.
+        .onChange(of: keyringStatus.status) { status in
+            guard status.needsKeyring, !hasOfferedRestore else { return }
+            hasOfferedRestore = true
+            showsRestore = true
+        }
+        .onChange(of: authService.isAuthenticated) { isAuthenticated in
+            guard isAuthenticated else {
+                // The next account to sign in here must be judged against its own keyring rather
+                // than the one that just left.
+                keyringStatus.reset()
+                return
+            }
+            // The launch-time refresh is skipped for a signed-out start, so this is the only one a
+            // fresh sign-in gets.
+            hasOfferedRestore = false
+            Task { await keyringStatus.refresh() }
         }
     }
 }
