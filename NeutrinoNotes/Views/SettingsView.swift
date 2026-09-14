@@ -5,6 +5,7 @@ import NeutrinoUI
 struct SettingsView: View {
     @EnvironmentObject var authService: AuthService
     @EnvironmentObject var appLock: AppLockService
+    @EnvironmentObject var keyringStatus: KeyringStatusService
 
     @State private var hasKeys = KeyImportService.hasStoredKeys()
     @State private var showKeyImport = false
@@ -30,6 +31,18 @@ struct SettingsView: View {
                     Label("Encryption Key: Imported \u{2713}", systemImage: "key.fill")
                         .foregroundStyle(.primary)
 
+                    // The one case where holding a keyring is not the same as being able to read
+                    // anything: one left behind by a different account decrypts none of this
+                    // account's notes, and the symptom without this line is every note failing to
+                    // open.
+                    if keyringStatus.status == .belongsToAnotherAccount {
+                        Label("This key belongs to a different account. Forget it, then restore "
+                              + "this account's key from your recovery kit or another device.",
+                              systemImage: "exclamationmark.triangle.fill")
+                            .font(.footnote)
+                            .foregroundStyle(.orange)
+                    }
+
                     Button(role: .destructive) {
                         showRemoveConfirmation = true
                     } label: {
@@ -38,7 +51,7 @@ struct SettingsView: View {
                     .alert("Forget this device's key?", isPresented: $showRemoveConfirmation) {
                         Button("Forget", role: .destructive) {
                             KeyImportService.removeKeys()
-                            hasKeys = false
+                            syncKeyState()
                         }
                         Button("Cancel", role: .cancel) {}
                     } message: {
@@ -58,10 +71,10 @@ struct SettingsView: View {
                         Label("Restore My Key", systemImage: "key.horizontal")
                     }
                     .sheet(isPresented: $showKeyRestore) {
-                        hasKeys = KeyImportService.hasStoredKeys()
+                        syncKeyState()
                     } content: {
                         KeyRestoreView(isPresented: $showKeyRestore) {
-                            hasKeys = KeyImportService.hasStoredKeys()
+                            syncKeyState()
                         }
                         .environmentObject(authService)
                     }
@@ -74,7 +87,7 @@ struct SettingsView: View {
                         Label("Import Key File", systemImage: "key")
                     }
                     .sheet(isPresented: $showKeyImport) {
-                        hasKeys = KeyImportService.hasStoredKeys()
+                        syncKeyState()
                     } content: {
                         KeyImportView(isPresented: $showKeyImport)
                     }
@@ -97,6 +110,15 @@ struct SettingsView: View {
             }
         }
         .navigationTitle("Settings")
+    }
+
+    /// Re-reads the Keychain after anything that installs or forgets a keyring, and tells the
+    /// shared status service too — it is what decides whether the app asks for the recovery kit on
+    /// the next sign-in, so leaving it stale here would either re-prompt for a key that just
+    /// arrived or stay quiet about one that was just removed.
+    private func syncKeyState() {
+        hasKeys = KeyImportService.hasStoredKeys()
+        Task { await keyringStatus.refresh() }
     }
 
     // MARK: - App Lock
@@ -155,5 +177,6 @@ struct SettingsView: View {
         SettingsView()
             .environmentObject(AuthService())
             .environmentObject(AppLockService())
+            .environmentObject(KeyringStatusService())
     }
 }
