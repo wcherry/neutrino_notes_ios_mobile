@@ -1,4 +1,5 @@
 import XCTest
+import NeutrinoCore
 @testable import NeutrinoNotes
 
 /// Tests for `WikiLink` — the `[[…]]` syntax three separately shipped clients have to agree on.
@@ -127,5 +128,54 @@ final class WikiLinkTests: XCTestCase {
 
     func test_token_caretBeforeTheBrackets_isNotAToken() {
         XCTAssertNil(WikiLink.token(in: "[[Meeting" as NSString, caret: 1))
+    }
+
+    // MARK: - Relative Markdown Links
+
+    private func relativeTitle(_ destination: String) -> String? {
+        guard let url = URL(string: destination) else { return nil }
+        return WikiLink.title(forRelativeLink: url)
+    }
+
+    func test_relativeLink_bareFileNameIsATitle() {
+        XCTAssertEqual(relativeTitle("Help.md"), "Help.md")
+        XCTAssertEqual(relativeTitle("Help"), "Help")
+    }
+
+    /// Drive resolves titles, not paths, so only the file name survives — which is what makes
+    /// `[Help](./notes/Help.md)` and `[[Help]]` land on the same note.
+    func test_relativeLink_keepsOnlyTheFileName() {
+        XCTAssertEqual(relativeTitle("./Help.md"), "Help.md")
+        XCTAssertEqual(relativeTitle("../notes/Help.md"), "Help.md")
+        XCTAssertEqual(relativeTitle("/notes/Help.md"), "Help.md")
+    }
+
+    func test_relativeLink_decodesPercentEncoding() {
+        XCTAssertEqual(relativeTitle("Meeting%20Notes.md"), "Meeting Notes.md")
+    }
+
+    /// The resolved title goes straight to `WikiLinkIndex`, which folds the extension and case
+    /// away — the same fold that lets a link written on a phone find a note made on the web.
+    func test_relativeLink_resolvesThroughTheSameIndexAsAWikiLink() {
+        let note = NoteItem(id: "n1", name: "Help.md", type: .file, parentID: nil, size: 1,
+                            modifiedAt: Date(), isTrashed: false, mimeType: NoteItem.markdownMIME)
+        let index = WikiLinkIndex(items: [note])
+
+        XCTAssertEqual(index.item(for: relativeTitle("./docs/help.MD") ?? "")?.id, "n1")
+    }
+
+    func test_relativeLink_ignoresDestinationsWithAScheme() {
+        XCTAssertNil(relativeTitle("https://example.com/Help.md"))
+        XCTAssertNil(relativeTitle("mailto:someone@example.com"))
+        XCTAssertNil(relativeTitle("nn-wikilink://Help"))
+        XCTAssertNil(relativeTitle("nn-footnote://1"))
+        XCTAssertNil(relativeTitle(NeutrinoAppLink.url(kind: .note, fileID: "n1")!.absoluteString))
+    }
+
+    func test_relativeLink_ignoresAnchorsAndPathsWithNoFileName() {
+        XCTAssertNil(relativeTitle("#section"))
+        XCTAssertNil(relativeTitle("/"))
+        XCTAssertNil(relativeTitle("./"))
+        XCTAssertNil(relativeTitle("../"))
     }
 }

@@ -1,5 +1,6 @@
 import XCTest
 import SwiftUI
+import NeutrinoCore
 @testable import NeutrinoNotes
 
 /// Tests for how a `[[wiki link]]` survives parsing and comes out the other side of the renderer.
@@ -103,5 +104,53 @@ final class WikiLinkRenderingTests: XCTestCase {
     func test_wikiLinkTitle_ignoresOtherSchemes() {
         XCTAssertNil(MarkdownInlineRenderer.wikiLinkTitle(from: URL(string: "https://example.com")!))
         XCTAssertNil(MarkdownInlineRenderer.wikiLinkTitle(from: URL(string: "nn-footnote://1")!))
+    }
+
+    // MARK: - Relative Markdown Links
+
+    private func renderedLink(_ destination: String) -> URL? {
+        MarkdownInlineRenderer.attributedString(
+            for: [.link(inlines: [.text("Help")], destination: destination)],
+            footnotes: []
+        ).runs.first?.link
+    }
+
+    /// The bug this guards: `URL(string: "Help.md")` is a perfectly good relative URL, so the link
+    /// rendered blue and tappable and then `openURL` silently declined it — a live-looking link
+    /// that opened nothing. It is an internal reference and has to leave the view as one.
+    func test_relativeMarkdownLink_rendersAsAWikiLink() throws {
+        let url = try XCTUnwrap(renderedLink("Help.md"))
+
+        XCTAssertEqual(url.scheme, MarkdownInlineRenderer.wikiLinkScheme)
+        XCTAssertEqual(MarkdownInlineRenderer.wikiLinkTitle(from: url), "Help.md")
+    }
+
+    func test_relativeMarkdownLink_withAPath_rendersAsAWikiLinkToTheFileName() throws {
+        let url = try XCTUnwrap(renderedLink("./notes/Help.md"))
+
+        XCTAssertEqual(MarkdownInlineRenderer.wikiLinkTitle(from: url), "Help.md")
+    }
+
+    func test_absoluteMarkdownLink_isLeftAlone() {
+        XCTAssertEqual(renderedLink("https://example.com/Help.md"),
+                       URL(string: "https://example.com/Help.md"))
+        XCTAssertEqual(renderedLink("mailto:someone@example.com"),
+                       URL(string: "mailto:someone@example.com"))
+    }
+
+    func test_anchorLink_isLeftAlone() {
+        XCTAssertEqual(renderedLink("#section"), URL(string: "#section"))
+    }
+
+    func test_renderedMarkdownLink_preservesInternalDocumentDestination() {
+        let destination = NeutrinoAppLink.url(kind: .doc, fileID: "doc-1")!
+        let rendered = MarkdownInlineRenderer.attributedString(
+            for: [.link(inlines: [.text("Project brief")], destination: destination.absoluteString)],
+            footnotes: []
+        )
+
+        XCTAssertEqual(rendered.runs.first?.link, destination)
+        XCTAssertEqual(NeutrinoAppLink.destination(from: rendered.runs.first!.link!)?.kind, .doc)
+        XCTAssertEqual(NeutrinoAppLink.destination(from: rendered.runs.first!.link!)?.fileID, "doc-1")
     }
 }
