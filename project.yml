@@ -60,8 +60,8 @@ targets:
     info:
       path: NeutrinoNotes/Info.plist
       properties:
-        CFBundleName: Neutrino Notes
-        CFBundleDisplayName: Neutrino Notes
+        CFBundleName: Notes
+        CFBundleDisplayName: Notes
         # Without these, xcodegen writes literal "1.0"/"1" into Info.plist and the
         # MARKETING_VERSION / CURRENT_PROJECT_VERSION build settings are ignored.
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
