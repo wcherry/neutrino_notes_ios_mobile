@@ -17,11 +17,11 @@ struct NoteItem: Identifiable, Hashable {
     /// The only file MIME type the Notes app browses — everything else lives in Drive but is
     /// out of scope for this app, per the roadmap: "browse only Markdown documents."
     ///
-    /// This is Drive's proprietary type for Markdown notes (the same value the `type=note`
-    /// server-side filter matches on) — not the raw `text/markdown` media type. Confirmed
-    /// against a live server response: an uploaded note round-trips as
-    /// `mimeType: "application/x-neutrino-note"`.
-    static let markdownMIME = "application/x-neutrino-note"
+    /// A note *is* a Markdown document: the body is Markdown and the row carries the standard
+    /// media type, which is the same value the `type=note` server-side filter matches on. Drive
+    /// used to store a proprietary `application/x-neutrino-note` here, which is what let the web
+    /// app keep note bodies in a private JSON format this app could not read.
+    static let markdownMIME = "text/markdown"
 
     // MARK: - Properties
 
@@ -32,7 +32,7 @@ struct NoteItem: Identifiable, Hashable {
     var size: Int64?            // bytes; nil for folders
     var modifiedAt: Date
     var isTrashed: Bool
-    var mimeType: String?       // "application/x-neutrino-note" for files; nil for folders
+    var mimeType: String?       // "text/markdown" for files; nil for folders
     /// Epic 12: Drive's `isStarred` flag — the Favorites model, shared with the web app and
     /// carried by both files and folders. Defaulted so existing call sites are unaffected.
     var isStarred: Bool = false
