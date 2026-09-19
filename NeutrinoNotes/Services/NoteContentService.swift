@@ -4,6 +4,7 @@ import CryptoKit
 import os.log
 import NeutrinoCore
 import NeutrinoAuth
+import NeutrinoCrypto
 
 // MARK: - NoteContentError
 
@@ -405,7 +406,7 @@ final class NoteContentService: ObservableObject {
             logger.error("debugCompareRegisteredPublicKey: this device holds no keyring")
             return
         }
-        let localPubKeyString = Base64URL.encode(active.publicKey)
+        let localPubKeyString = Data(active.publicKey).base64URLEncodedString
         do {
             guard let meURL = URL(string: baseURL + "/api/v1/auth/me") else { return }
             var meRequest = URLRequest(url: meURL)

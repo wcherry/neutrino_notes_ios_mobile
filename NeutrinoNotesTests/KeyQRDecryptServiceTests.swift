@@ -1,6 +1,7 @@
 import XCTest
 import CommonCrypto
 import Sodium
+import NeutrinoCrypto
 @testable import NeutrinoNotes
 
 // MARK: - KeyQRDecryptServiceTests

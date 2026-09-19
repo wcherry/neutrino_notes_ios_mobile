@@ -1,5 +1,6 @@
 import XCTest
 import Sodium
+import NeutrinoCrypto
 @testable import NeutrinoNotes
 
 /// Tests for `OfflineStore`, the on-disk cache backing Epic 9 (Offline Editing). Every test
@@ -22,7 +23,7 @@ final class OfflineStoreTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
-        KeyImportService.removeKeys()
+        KeyringTestSupport.clear()
         tempDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try? FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
         content = NoteContentService()
@@ -30,7 +31,7 @@ final class OfflineStoreTests: XCTestCase {
 
     override func tearDown() {
         super.tearDown()
-        KeyImportService.removeKeys()
+        KeyringTestSupport.clear()
         try? FileManager.default.removeItem(at: tempDirectory)
         tempDirectory = nil
         content = nil

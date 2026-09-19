@@ -1,5 +1,6 @@
 import XCTest
 import Sodium
+import NeutrinoCrypto
 @testable import NeutrinoNotes
 
 /// Tests for the assumptions version history rests on, exercised against the real libsodium
@@ -17,12 +18,12 @@ final class VersionHistoryServiceTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
-        KeyImportService.removeKeys()
+        KeyringTestSupport.clear()
     }
 
     override func tearDown() {
         super.tearDown()
-        KeyImportService.removeKeys()
+        KeyringTestSupport.clear()
     }
 
     // MARK: - Helpers

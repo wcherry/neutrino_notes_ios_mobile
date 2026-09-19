@@ -93,8 +93,10 @@ final class KeyringStatusServiceTests: XCTestCase {
     // MARK: - Somebody else's keyring
 
     func testStatusFlagsAKeyringLeftBehindByAnotherAccount() async {
-        KeyringTestSupport.installKeyring()
-        let sut = KeyringStatusService(authService: signedIn(as: Self.tokenForOtherUser))
+        // The *private* item specifically: this state is reachable only from a keyring written
+        // before the cross-app group existed, since the shared item is keyed by account.
+        KeyringTestSupport.installLegacyPrivateKeyring(userId: "other-user")
+        let sut = KeyringStatusService(authService: signedIn(as: Self.tokenForTestUser))
 
         await sut.refresh()
 
@@ -103,6 +105,21 @@ final class KeyringStatusServiceTests: XCTestCase {
         // reporting it has no key — but both need the same prompt, hence `needsKeyring`.
         XCTAssertEqual(sut.status, .belongsToAnotherAccount)
         XCTAssertTrue(sut.status.needsKeyring)
+    }
+
+    /// The property that makes a cross-app keyring safe to share: it is keyed by account, so a
+    /// second account signing in on the same device reads `.missing` rather than being handed the
+    /// first account's identity. The first account's key is not destroyed either — it is still
+    /// there under its own id when that user comes back.
+    func testASharedKeyringForAnotherAccountIsNotAdopted() async {
+        KeyringTestSupport.installKeyring(userId: "other-user")
+        let sut = KeyringStatusService(authService: signedIn(as: Self.tokenForTestUser))
+
+        await sut.refresh()
+
+        XCTAssertEqual(sut.status, .missing)
+
+        KeyringTestSupport.clear(userId: "other-user")
     }
 
     // MARK: - Unknown account

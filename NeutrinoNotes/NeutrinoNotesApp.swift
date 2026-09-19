@@ -1,6 +1,7 @@
 import SwiftUI
 import NeutrinoCore
 import NeutrinoAuth
+import NeutrinoCrypto
 import NeutrinoUI
 
 @main

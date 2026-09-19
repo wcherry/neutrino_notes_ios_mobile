@@ -1,6 +1,7 @@
 import XCTest
 import Sodium
 import NeutrinoCore
+import NeutrinoCrypto
 @testable import NeutrinoNotes
 
 // MARK: - FakeLinkPublisher

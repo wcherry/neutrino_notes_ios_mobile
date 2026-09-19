@@ -1,5 +1,6 @@
 import XCTest
 import Sodium
+import NeutrinoCrypto
 @testable import NeutrinoNotes
 
 /// Tests for NoteContentService's crypto helpers (encrypt/decrypt, seal/unsealDEK,
@@ -15,12 +16,12 @@ final class NoteContentServiceTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
-        KeyImportService.removeKeys()
+        KeyringTestSupport.clear()
     }
 
     override func tearDown() {
         super.tearDown()
-        KeyImportService.removeKeys()
+        KeyringTestSupport.clear()
     }
 
     // MARK: - Helpers
