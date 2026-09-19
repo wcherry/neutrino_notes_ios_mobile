@@ -1,5 +1,6 @@
 import SwiftUI
 import NeutrinoAuth
+import NeutrinoCrypto
 import NeutrinoUI
 
 struct SettingsView: View {
@@ -7,7 +8,7 @@ struct SettingsView: View {
     @EnvironmentObject var appLock: AppLockService
     @EnvironmentObject var keyringStatus: KeyringStatusService
 
-    @State private var hasKeys = KeyImportService.hasStoredKeys()
+    @State private var hasKeys = KeyImportService.hasStoredKeyring()
     @State private var showKeyImport = false
     @State private var showKeyRestore = false
     @State private var showRemoveConfirmation = false
@@ -50,7 +51,7 @@ struct SettingsView: View {
                     }
                     .alert("Forget this device's key?", isPresented: $showRemoveConfirmation) {
                         Button("Forget", role: .destructive) {
-                            KeyImportService.removeKeys()
+                            KeyImportService.removeKeyring()
                             syncKeyState()
                         }
                         Button("Cancel", role: .cancel) {}
@@ -117,7 +118,7 @@ struct SettingsView: View {
     /// the next sign-in, so leaving it stale here would either re-prompt for a key that just
     /// arrived or stay quiet about one that was just removed.
     private func syncKeyState() {
-        hasKeys = KeyImportService.hasStoredKeys()
+        hasKeys = KeyImportService.hasStoredKeyring()
         Task { await keyringStatus.refresh() }
     }
 

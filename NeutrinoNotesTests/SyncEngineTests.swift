@@ -1,6 +1,7 @@
 import XCTest
 import Sodium
 import NeutrinoCore
+import NeutrinoCrypto
 @testable import NeutrinoNotes
 
 // MARK: - FakeSyncError
@@ -80,7 +81,7 @@ final class SyncEngineTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
-        KeyImportService.removeKeys()
+        KeyringTestSupport.clear()
         tempDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try? FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
         content = NoteContentService()
@@ -88,7 +89,7 @@ final class SyncEngineTests: XCTestCase {
 
     override func tearDown() {
         super.tearDown()
-        KeyImportService.removeKeys()
+        KeyringTestSupport.clear()
         try? FileManager.default.removeItem(at: tempDirectory)
         tempDirectory = nil
         content = nil

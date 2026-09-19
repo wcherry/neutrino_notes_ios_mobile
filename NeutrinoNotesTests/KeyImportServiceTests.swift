@@ -1,6 +1,7 @@
 import XCTest
 import CryptoKit
 import Foundation
+import NeutrinoCrypto
 @testable import NeutrinoNotes
 
 /// Tests for KeyImportService.
@@ -9,7 +10,8 @@ import Foundation
 /// a genuine cryptographic key pair rather than arbitrary strings.
 ///
 /// All tests clean up Keychain state in setUp/tearDown using
-/// KeyImportService.removeKeys() so no test can bleed into another.
+/// KeyringTestSupport.clear() so no test can bleed into another — it clears both the private
+/// item and the cross-app shared one, which a bare removeKeyring() cannot do without a session.
 final class KeyImportServiceTests: XCTestCase {
 
     // MARK: - Lifecycle
@@ -17,13 +19,13 @@ final class KeyImportServiceTests: XCTestCase {
     @MainActor
     override func setUp() {
         super.setUp()
-        KeyImportService.removeKeys()
+        KeyringTestSupport.clear()
     }
 
     @MainActor
     override func tearDown() {
         super.tearDown()
-        KeyImportService.removeKeys()
+        KeyringTestSupport.clear()
     }
 
     // MARK: - Helpers
@@ -223,41 +225,41 @@ final class KeyImportServiceTests: XCTestCase {
         }
     }
 
-    // MARK: - hasStoredKeys
+    // MARK: - hasStoredKeyring
 
-    /// After removeKeys() (called in setUp), hasStoredKeys() must return false
+    /// After removeKeyring() (called in setUp), hasStoredKeyring() must return false
     /// because no encryption keys are present in the Keychain.
     @MainActor
-    func test_hasStoredKeys_withNoKeysInKeychain_returnsFalse() {
-        // setUp already called removeKeys(); this verifies the post-condition.
-        XCTAssertFalse(KeyImportService.hasStoredKeys())
+    func test_hasStoredKeyring_withNoKeyringInKeychain_returnsFalse() {
+        // setUp already called removeKeyring(); this verifies the post-condition.
+        XCTAssertFalse(KeyImportService.hasStoredKeyring())
     }
 
-    /// Installing a keyring makes hasStoredKeys() true. The three loose entries
+    /// Installing a keyring makes hasStoredKeyring() true. The three loose entries
     /// it used to check are gone — one item now holds the whole keyring.
     @MainActor
-    func test_hasStoredKeys_afterInstallingAKeyring_returnsTrue() {
+    func test_hasStoredKeyring_afterInstallingAKeyring_returnsTrue() {
         KeyringTestSupport.installKeyring()
 
-        XCTAssertTrue(KeyImportService.hasStoredKeys())
+        XCTAssertTrue(KeyImportService.hasStoredKeyring())
     }
 
-    // MARK: - removeKeys
+    // MARK: - removeKeyring
 
-    /// removeKeys() forgets this device's keyring.
+    /// removeKeyring() forgets this device's keyring.
     ///
     /// Worth being precise about what that means now: there is no server-side
     /// copy to fetch back, so this is only recoverable from the printed kit or
     /// another paired device.
     @MainActor
-    func test_removeKeys_forgetsTheKeyring() {
+    func test_removeKeyring_forgetsTheKeyring() {
         KeyringTestSupport.installKeyring()
 
-        KeyImportService.removeKeys()
+        KeyImportService.removeKeyring()
 
-        XCTAssertFalse(KeyImportService.hasStoredKeys())
+        XCTAssertFalse(KeyImportService.hasStoredKeyring())
         XCTAssertNil(KeyringStore.shared.load())
     }
 
-    // MARK: - removeKeys
+    // MARK: - removeKeyring
 }

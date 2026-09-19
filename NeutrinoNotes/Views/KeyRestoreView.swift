@@ -1,5 +1,6 @@
 import SwiftUI
 import NeutrinoAuth
+import NeutrinoCrypto
 import NeutrinoUI
 
 // MARK: - KeyRestoreView
@@ -11,7 +12,7 @@ import NeutrinoUI
 // server-side copy of the *active* key any more — it is created on a client and
 // never transmitted — so there are three ways in:
 //
-//   key code       scan the PIN-protected QR the web app shows (`KeyQRImportView`)
+//   key code       scan the PIN-protected QR the web app shows (`KeyringQRImportView`)
 //   recovery kit   the printed backup, typed in
 //   pair a device  the two-QR handshake with a device that already has the key
 //
@@ -126,7 +127,7 @@ struct KeyRestoreView: View {
                 .environmentObject(authService)
             }
             .sheet(isPresented: $showKeyCode) {
-                KeyQRImportView(isPresented: $showKeyCode) {
+                KeyringQRImportView(isPresented: $showKeyCode) {
                     onImported()
                     isPresented = false
                 }

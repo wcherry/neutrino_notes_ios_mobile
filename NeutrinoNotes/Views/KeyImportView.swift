@@ -2,6 +2,7 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 import NeutrinoAuth
+import NeutrinoCrypto
 import NeutrinoUI
 
 // MARK: - KeyImportView

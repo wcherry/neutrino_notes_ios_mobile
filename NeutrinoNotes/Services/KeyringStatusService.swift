@@ -1,6 +1,7 @@
 import Foundation
 import os
 import NeutrinoAuth
+import NeutrinoCrypto
 
 // MARK: - KeyringStatus
 
@@ -61,6 +62,25 @@ final class KeyringStatusService: ObservableObject {
     /// `async` only because reading the account id decodes the access token; nothing here touches
     /// the network.
     func refresh() async {
+        // Bind before reading. The shared keyring is keyed by user id, so an unbound store can see
+        // only this app's private copy — which on a device where Drive holds the key is the copy
+        // that does not exist.
+        let userID = await authService?.currentUserID()
+        if let userID {
+            store.bind(userID: userID)
+            switch store.adoptSharedKeyring(forUserID: userID) {
+            case .adopted(let versions):
+                logger.info("adopted the device keyring, versions=\(versions, privacy: .public)")
+            case .conflict:
+                // Two keyrings claiming one version with different keys. The shared copy is what
+                // the other apps read, so reads go on using it; this app's private copy is left in
+                // place rather than overwritten, so nothing is lost while it is sorted out.
+                logger.error("device and private keyrings disagree on a version; using the device copy")
+            case .noneAvailable, .unsupported:
+                break
+            }
+        }
+
         guard let keyring = store.load() else {
             status = .missing
             logger.debug("keyring status: missing")
@@ -69,7 +89,7 @@ final class KeyringStatusService: ObservableObject {
         // A keyring whose account cannot be determined is treated as this account's rather than
         // another's: a token that will not decode is a session problem, and sending the user to
         // restore a key they already hold would be the wrong instruction.
-        guard let userID = await authService?.currentUserID() else {
+        guard let userID else {
             status = .present
             return
         }
@@ -81,5 +101,7 @@ final class KeyringStatusService: ObservableObject {
     /// is judged against its own keyring rather than the last one's.
     func reset() {
         status = .unknown
+        // Unbind too, or the next account signs in against the previous one's keyring account name.
+        store.bind(userID: nil)
     }
 }
