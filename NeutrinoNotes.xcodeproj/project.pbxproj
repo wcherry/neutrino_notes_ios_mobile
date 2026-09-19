@@ -109,6 +109,7 @@
 		D1E443FBA9ACB555EE1FCB2E /* NoteTagTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C513325052A9DDBCA0921870 /* NoteTagTests.swift */; };
 		D513B5AC01930FFFCA674156 /* NoteTextStatsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC8D52402CEE194162B306D5 /* NoteTextStatsTests.swift */; };
 		D58767196FAB6BE450BBE993 /* SharingServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82B5E4568627515216AE80DE /* SharingServiceTests.swift */; };
+		D9347E2FDBCD0E93435F1062 /* ReportBugButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B052F33D916A9A75C28F0FB /* ReportBugButton.swift */; };
 		D99AB3B20DFD322A765D3EEB /* NeutrinoNotesApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7219A737528AEE2A68BD1328 /* NeutrinoNotesApp.swift */; };
 		E13D1729B1D7A7D5A386219E /* CreateNoteSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2808F78787F12601659B34C4 /* CreateNoteSheet.swift */; };
 		E35A5EFE4742F39F9A7581B2 /* TextDiffTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5B5055A7333FBF616C13F61 /* TextDiffTests.swift */; };
@@ -166,6 +167,7 @@
 		345F1AD94450DF8BD0FFC4FF /* TaggedNotesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaggedNotesView.swift; sourceTree = "<group>"; };
 		36C191F180C55E6FECC60538 /* SharePermissionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharePermissionTests.swift; sourceTree = "<group>"; };
 		393475DD4550E99FC4658CE4 /* FileEventsClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileEventsClient.swift; sourceTree = "<group>"; };
+		3B052F33D916A9A75C28F0FB /* ReportBugButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportBugButton.swift; sourceTree = "<group>"; };
 		3BC0CB2BEDF004D4DC9E02E6 /* AuthServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthServiceTests.swift; sourceTree = "<group>"; };
 		3CEA78BAB9CE204E52B2D38E /* NeutrinoNotes.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = NeutrinoNotes.entitlements; sourceTree = "<group>"; };
 		4075A8918BEAD59B18BB159C /* FeatureFlags.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureFlags.swift; sourceTree = "<group>"; };
@@ -305,6 +307,7 @@
 				FF79FFDD4161E0548FD3CB7C /* OfflineView.swift */,
 				7E845A639EDC18142949B391 /* RecentsView.swift */,
 				522FCC848822184A4040BC32 /* RenameSheet.swift */,
+				3B052F33D916A9A75C28F0FB /* ReportBugButton.swift */,
 				F70FBB7ED979E83CD6A9B2BA /* SaveVersionSheet.swift */,
 				56042424DD54491B63400931 /* SettingsView.swift */,
 				72247138360D8E7E8F24B6C5 /* ShareSheet.swift */,
@@ -623,6 +626,7 @@
 				A1CE70FFDF2274635AC20EBF /* PinStore.swift in Sources */,
 				750F7D3BFB11AE4B9F546A89 /* RecentsView.swift in Sources */,
 				470343D0DE88BCDDD3C27B6B /* RenameSheet.swift in Sources */,
+				D9347E2FDBCD0E93435F1062 /* ReportBugButton.swift in Sources */,
 				78334E501DF066E0FFB42AF9 /* SaveVersionSheet.swift in Sources */,
 				CEB50895F159366A3A416FB7 /* SettingsView.swift in Sources */,
 				CBEEEE5E031948B9AA03864F /* SharePermission.swift in Sources */,
