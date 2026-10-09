@@ -101,6 +101,13 @@ final class FileEventsClient: NSObject, ObservableObject {
     /// Called when a *peer* reports the file changed. Never called for this client's own broadcast.
     var onRemoteUpdate: (() -> Void)?
 
+    /// Called when the relay re-opens after a gap — the app came back to the foreground, or the
+    /// socket dropped and is being retried. Never called for the first `connect`.
+    ///
+    /// The relay keeps no history: a doorbell rung while nobody was listening is gone for good. So
+    /// silence across a gap means nothing, and the owner has to ask the server whether it missed one.
+    var onReconnect: (() -> Void)?
+
     // MARK: - Identity
 
     /// Distinguishes this app's own broadcasts from everyone else's — the relay echoes a frame back
@@ -160,13 +167,14 @@ final class FileEventsClient: NSObject, ObservableObject {
         closeSocket()
     }
 
-    /// Re-opens the relay for the note this client is still for. No-op if it never had one, or if
-    /// the socket survived.
+    /// Re-opens the relay for the note this client is still for, and reports the gap through
+    /// [onReconnect]. No-op if it never had one, or if the socket survived.
     func resume() {
         guard FeatureFlags.liveFileEvents, fileID != nil, task == nil else { return }
         isStopping = false
         attempt = 0
         openSocket()
+        onReconnect?()
     }
 
     private func closeSocket() {
@@ -259,6 +267,7 @@ final class FileEventsClient: NSObject, ObservableObject {
                 guard let self, !self.isStopping else { return }
                 self.reconnectTask = nil
                 self.openSocket()
+                self.onReconnect?()
             }
         }
     }
