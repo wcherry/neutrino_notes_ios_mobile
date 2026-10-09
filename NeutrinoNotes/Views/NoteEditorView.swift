@@ -67,6 +67,10 @@ struct NoteEditorView: View {
     /// Set when a peer reported a change that couldn't be applied because the user is mid-edit.
     /// Drives the banner offering to reload; never applied behind their back.
     @State private var hasUnappliedRemoteChange = false
+    /// The server's `updatedAt` for the version on screen — read at load, advanced by each save.
+    /// What a reconnect compares against to find out whether it missed a change (see
+    /// `checkForMissedRemoteChange`). Nil when unknown, which reads as "maybe".
+    @State private var serverUpdatedAt: Date?
     /// Epic 20: the notes this device can resolve a `[[title]]` against.
     @State private var wikiLinkIndex = WikiLinkIndex()
     /// A tapped `[[title]]` that matches nothing yet, awaiting a decision to create it.
@@ -652,9 +656,14 @@ struct NoteEditorView: View {
         }
 
         do {
+            // Read before the content, never after: a change landing in between then leaves an
+            // older timestamp than the text, which costs one needless reload later — the other
+            // order would leave a newer one, and hide that change from the reconnect check.
+            let updatedAt = try? await noteContentService.fetchServerModifiedAt(for: item)
             let (loadedText, loadedDEK) = try await noteContentService.loadContent(for: item)
             text = loadedText
             dek = loadedDEK
+            serverUpdatedAt = updatedAt
             usingOfflineCopy = false
         } catch {
             // The network is nominally up but the fetch failed. If this note is downloaded, the
@@ -737,6 +746,7 @@ struct NoteEditorView: View {
 
         do {
             let updatedAt = try await noteContentService.saveContent(text, for: item, dek: dek)
+            serverUpdatedAt = updatedAt
             notesDriveService.noteContentWasSaved(itemID: item.id, size: Int64(text.utf8.count), modifiedAt: updatedAt)
             if FeatureFlags.offlineEditing && offlineStore.isAvailableOffline(item.id) {
                 refreshOfflineCache(savedAt: updatedAt, dek: dek)
@@ -778,6 +788,7 @@ struct NoteEditorView: View {
             isDirty = false
             // The snapshot's timestamp is the server's clock for this write; the device's is not.
             let savedAt = version.createdAt
+            serverUpdatedAt = savedAt
             notesDriveService.noteContentWasSaved(itemID: item.id, size: Int64(text.utf8.count), modifiedAt: savedAt)
             if FeatureFlags.offlineEditing && offlineStore.isAvailableOffline(item.id) {
                 refreshOfflineCache(savedAt: savedAt, dek: dek)
@@ -945,7 +956,23 @@ struct NoteEditorView: View {
         guard FeatureFlags.liveFileEvents, networkMonitor.isOnline, !usingOfflineCopy else { return }
         fileEvents.authService = authService
         fileEvents.onRemoteUpdate = { handleRemoteUpdate() }
+        fileEvents.onReconnect = { Task { await checkForMissedRemoteChange() } }
         fileEvents.connect(to: item.id)
+    }
+
+    /// The relay was down for a while — most often because the app was in the background — and
+    /// any doorbell rung meanwhile is lost. Asks the server whether the note moved since the
+    /// version on screen, and treats a yes exactly like a peer's signal.
+    ///
+    /// A save in flight skips the check: its own write would read as somebody else's, and the
+    /// `serverUpdatedAt` it brings back is newer than anything this request could see anyway.
+    private func checkForMissedRemoteChange() async {
+        guard networkMonitor.isOnline, !usingOfflineCopy, saveStatus != .saving else { return }
+        // Nil is a note gone from the server — trashed, deleted, unshared — not a change to load.
+        guard let latest = try? await noteContentService.fetchServerModifiedAt(for: item) else { return }
+        guard saveStatus != .saving else { return }
+        if let serverUpdatedAt, latest <= serverUpdatedAt { return }
+        handleRemoteUpdate()
     }
 
     /// A peer changed this note.
