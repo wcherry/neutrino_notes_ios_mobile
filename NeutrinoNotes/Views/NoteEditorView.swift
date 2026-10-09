@@ -788,7 +788,11 @@ struct NoteEditorView: View {
             isDirty = false
             // The snapshot's timestamp is the server's clock for this write; the device's is not.
             let savedAt = version.createdAt
-            serverUpdatedAt = savedAt
+            // But it can't stand in for the file's `updatedAt`: the server stamps the snapshot a
+            // moment before it moves the file, so this session's own save would read as a missed
+            // change on the next reconnect. Ask instead. A peer's change slipping in between is
+            // safe — the socket is open now, and its doorbell reaches `handleRemoteUpdate`.
+            serverUpdatedAt = try? await noteContentService.fetchServerModifiedAt(for: item)
             notesDriveService.noteContentWasSaved(itemID: item.id, size: Int64(text.utf8.count), modifiedAt: savedAt)
             if FeatureFlags.offlineEditing && offlineStore.isAvailableOffline(item.id) {
                 refreshOfflineCache(savedAt: savedAt, dek: dek)
