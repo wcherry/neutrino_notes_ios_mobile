@@ -108,4 +108,48 @@ final class FileEventsClientTests: XCTestCase {
     func test_socketURL_refusesAHostItCannotUpgrade() {
         XCTAssertNil(FileEventsClient.socketURL(fileID: "f1", token: "t", baseURL: "ftp://example.com"))
     }
+
+    // MARK: - Reconnect
+
+    // Each test ends in `disconnect()` before yielding, so the socket `connect` schedules finds its
+    // note forgotten and never dials out.
+
+    func test_firstConnect_doesNotReportAGap() {
+        let client = FileEventsClient()
+        var reconnects = 0
+        client.onReconnect = { reconnects += 1 }
+
+        client.connect(to: "f1")
+        client.disconnect()
+
+        XCTAssertEqual(reconnects, 0, "a freshly loaded note has nothing to catch up on")
+    }
+
+    func test_resumeAfterSuspend_reportsTheGap() {
+        // The bug this pins: a note edited elsewhere while the app was in the background stayed
+        // stale on return, because the relay has no history and the signal sent meanwhile was lost.
+        let client = FileEventsClient()
+        var reconnects = 0
+        client.onReconnect = { reconnects += 1 }
+
+        client.connect(to: "f1")
+        client.suspend()
+        client.resume()
+        client.disconnect()
+
+        XCTAssertEqual(reconnects, 1)
+    }
+
+    func test_resumeWithoutANote_reportsNothing() {
+        let client = FileEventsClient()
+        var reconnects = 0
+        client.onReconnect = { reconnects += 1 }
+
+        client.resume()
+        client.connect(to: "f1")
+        client.disconnect()
+        client.resume()
+
+        XCTAssertEqual(reconnects, 0, "an editor that has gone away has no note to re-check")
+    }
 }
