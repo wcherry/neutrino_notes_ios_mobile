@@ -345,7 +345,7 @@ final class TagsService: ObservableObject {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await URLSession.shared.data(for: req)
+            (data, response) = try await URLSession.shared.data(for: req, retry: .default)
         } catch {
             logger.error("network error: \(req.url?.path ?? "?", privacy: .public) \(error, privacy: .public)")
             throw TagsError.networkError(underlying: error)

@@ -232,7 +232,7 @@ final class NoteContentService: ObservableObject {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await URLSession.shared.data(for: request)
+            (data, response) = try await URLSession.shared.data(for: request, retry: .default)
         } catch {
             throw NoteContentError.networkError(underlying: error)
         }
@@ -411,7 +411,7 @@ final class NoteContentService: ObservableObject {
             guard let meURL = URL(string: baseURL + "/api/v1/auth/me") else { return }
             var meRequest = URLRequest(url: meURL)
             meRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-            let (meData, _) = try await URLSession.shared.data(for: meRequest)
+            let (meData, _) = try await URLSession.shared.data(for: meRequest, retry: .default)
             let decoder = JSONDecoder()
             decoder.keyDecodingStrategy = .convertFromSnakeCase
             let me = try decoder.decode(APIUserProfile.self, from: meData)
@@ -419,7 +419,7 @@ final class NoteContentService: ObservableObject {
             guard let keyURL = URL(string: baseURL + "/api/v1/auth/users/\(me.id)/public-key") else { return }
             var keyRequest = URLRequest(url: keyURL)
             keyRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-            let (keyData, keyResponse) = try await URLSession.shared.data(for: keyRequest)
+            let (keyData, keyResponse) = try await URLSession.shared.data(for: keyRequest, retry: .default)
             guard let http = keyResponse as? HTTPURLResponse else { return }
             if http.statusCode == 404 {
                 logger.error("debugCompareRegisteredPublicKey: server has NO public key registered for user \(me.id, privacy: .public) — imported key (local only) is \(localPubKeyString, privacy: .public)")
@@ -469,7 +469,7 @@ final class NoteContentService: ObservableObject {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await URLSession.shared.data(for: request)
+            (data, response) = try await URLSession.shared.data(for: request, retry: .default)
         } catch {
             throw NoteContentError.networkError(underlying: error)
         }
@@ -494,7 +494,7 @@ final class NoteContentService: ObservableObject {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await URLSession.shared.data(for: request)
+            (data, response) = try await URLSession.shared.data(for: request, retry: .default)
         } catch {
             throw NoteContentError.networkError(underlying: error)
         }
@@ -514,7 +514,7 @@ final class NoteContentService: ObservableObject {
 
         let response: URLResponse
         do {
-            (_, response) = try await URLSession.shared.data(for: request)
+            (_, response) = try await URLSession.shared.data(for: request, retry: .default)
         } catch {
             throw NoteContentError.networkError(underlying: error)
         }

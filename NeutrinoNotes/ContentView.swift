@@ -1,10 +1,13 @@
 import SwiftUI
 import NeutrinoCore
 import NeutrinoAuth
+import NeutrinoUI
 
 struct ContentView: View {
     @EnvironmentObject var offlineStore: OfflineStore
     @EnvironmentObject var deepLinkRouter: DeepLinkRouter
+    @EnvironmentObject var networkMonitor: NetworkMonitor
+    @EnvironmentObject var syncEngine: SyncEngine
     @State private var selectedTab = 0
 
     // Epic 20: each tab's stack owns its own path, so each needs its own router to push a
@@ -60,6 +63,11 @@ struct ContentView: View {
             }
             .tag(4)
         }
+        .connectivityBanner(isOnline: networkMonitor.isOnline,
+                            pendingChanges: syncablePendingCount,
+                            activity: syncEngine.state.activity,
+                            keepsChangesOffline: FeatureFlags.offlineEditing,
+                            onRetry: { syncEngine.requestSync() })
         // A note link has to land on the Notes tab whatever the user was last looking at —
         // NotesView owns the navigation stack the editor is pushed onto, and it only consumes the
         // pending link once it is on screen.
@@ -74,6 +82,13 @@ struct ContentView: View {
     /// `.badge(0)` hides the badge, so this is a no-op when the flag is off or nothing is pending.
     private var offlineTabBadgeCount: Int {
         FeatureFlags.offlineEditing ? offlineStore.pendingCount : 0
+    }
+
+    /// What a sync can still send. A conflicted note waits on the user in the Offline tab, so
+    /// "Sync Now" is not offered for it.
+    private var syncablePendingCount: Int {
+        guard FeatureFlags.offlineEditing else { return 0 }
+        return offlineStore.notes.filter { $0.pendingEdit != nil && $0.conflict == nil }.count
     }
 }
 
