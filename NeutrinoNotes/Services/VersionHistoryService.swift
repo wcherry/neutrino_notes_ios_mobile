@@ -177,7 +177,7 @@ final class VersionHistoryService: ObservableObject {
             if let body {
                 (data, response) = try await URLSession.shared.upload(for: req, from: body)
             } else {
-                (data, response) = try await URLSession.shared.data(for: req)
+                (data, response) = try await URLSession.shared.data(for: req, retry: .default)
             }
         } catch {
             logger.error("network error: \(req.url?.path ?? "?", privacy: .public) \(error, privacy: .public)")

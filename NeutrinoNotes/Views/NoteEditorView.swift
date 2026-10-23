@@ -235,7 +235,7 @@ struct NoteEditorView: View {
 
     private var editorBody: some View {
         VStack(spacing: 0) {
-            offlineBanner
+            // Offline is said once, app-wide, by the ConnectivityBanner above the tabs.
             sharedBanner
             remoteChangeBanner
             tagBar
@@ -358,22 +358,6 @@ struct NoteEditorView: View {
         y = min(max(y, margin), max(margin, size.height - height - margin))
 
         return CGSize(width: x, height: y)
-    }
-
-    @ViewBuilder
-    private var offlineBanner: some View {
-        if isOfflineEditingActive {
-            HStack(spacing: 6) {
-                Image(systemName: "wifi.slash")
-                Text("You're offline. Edits will sync automatically once you're back online.")
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .padding(.horizontal)
-            .padding(.vertical, 6)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.bar)
-        }
     }
 
     /// Says whose note this is and what may be done with it. Shown for the whole session on a
