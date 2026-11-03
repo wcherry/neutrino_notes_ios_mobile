@@ -64,6 +64,7 @@ struct NoteEditorView: View {
     /// Epic 24: the file-events relay for this note. Owned by the editor, so it lives and dies with
     /// the screen that cares about it.
     @StateObject private var fileEvents = FileEventsClient()
+    @StateObject private var previewer = NotePreviewer()
     /// Set when a peer reported a change that couldn't be applied because the user is mid-edit.
     /// Drives the banner offering to reload; never applied behind their back.
     @State private var hasUnappliedRemoteChange = false
@@ -649,6 +650,8 @@ struct NoteEditorView: View {
             dek = loadedDEK
             serverUpdatedAt = updatedAt
             usingOfflineCopy = false
+            previewer.attach(fileID: item.id, contentService: noteContentService)
+            previewer.loaded(loadedText, title: item.name)
         } catch {
             // The network is nominally up but the fetch failed. If this note is downloaded, the
             // cached copy is a better answer than an error — fall back to it and keep the session
@@ -729,8 +732,11 @@ struct NoteEditorView: View {
         }
 
         do {
-            let updatedAt = try await noteContentService.saveContent(text, for: item, dek: dek)
+            let saved = try await noteContentService.saveContentReportingPreview(text, for: item, dek: dek)
+            let updatedAt = saved.updatedAt
             serverUpdatedAt = updatedAt
+            previewer.attach(fileID: item.id, contentService: noteContentService)
+            previewer.saved(text, title: item.name, hasPreview: saved.hasPreview)
             notesDriveService.noteContentWasSaved(itemID: item.id, size: Int64(text.utf8.count), modifiedAt: updatedAt)
             if FeatureFlags.offlineEditing && offlineStore.isAvailableOffline(item.id) {
                 refreshOfflineCache(savedAt: updatedAt, dek: dek)
