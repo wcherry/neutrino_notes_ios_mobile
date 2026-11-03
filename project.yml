@@ -41,6 +41,9 @@ targets:
         product: NeutrinoCrypto
       - package: NeutrinoShared
         product: NeutrinoUI
+      # Page one of a note, laid out as it prints, is its Drive preview.
+      - package: NeutrinoShared
+        product: NeutrinoPrint
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.neutrino.notes

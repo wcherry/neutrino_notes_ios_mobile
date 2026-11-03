@@ -147,7 +147,21 @@ final class NoteContentService: ObservableObject {
 
     /// Encrypts `text` with the note's existing DEK and PUTs it to the autosave endpoint.
     /// Returns the server's updated `updatedAt` so the caller can reflect it in NotesDriveService.
+    /// What a successful save reports back.
+    struct SaveResult {
+        let updatedAt: Date
+        /// Whether Drive holds a preview picture of the note. See ``NotePreviewer``.
+        let hasPreview: Bool
+    }
+
     func saveContent(_ text: String, for item: NoteItem, dek: Bytes) async throws -> Date {
+        try await saveContentReportingPreview(text, for: item, dek: dek).updatedAt
+    }
+
+    /// ``saveContent(_:for:dek:)``, also saying whether the note has a Drive preview — which the
+    /// editor needs and the sync engine does not.
+    func saveContentReportingPreview(_ text: String, for item: NoteItem,
+                                     dek: Bytes) async throws -> SaveResult {
         logger.error("saveContent: id=\(item.id, privacy: .public)")
         let token = try await authorizedToken()
 
@@ -179,10 +193,35 @@ final class NoteContentService: ObservableObject {
         do {
             let updated = try Self.decoder.decode(APIFileResponse.self, from: data)
             logger.error("saveContent succeeded: id=\(item.id, privacy: .public)")
-            return updated.updatedAt
+            return SaveResult(updatedAt: updated.updatedAt, hasPreview: updated.coverThumbnailUrl != nil)
         } catch {
             throw NoteContentError.decodingError(underlying: error)
         }
+    }
+
+    // MARK: - Preview
+
+    /// Stores `jpeg` as the note's Drive preview — the picture of its first page the Drive grid
+    /// shows.
+    ///
+    /// Unlike the content it is not encrypted: the server cannot draw a note it cannot read, so the
+    /// preview is the one picture of it that is stored in the clear, exactly like the thumbnail an
+    /// upload carries.
+    func setPreview(_ jpeg: Data, for fileID: String) async throws {
+        let token = try await authorizedToken()
+        guard let url = URL(string: baseURL + DriveThumbnail.path(fileID: fileID)) else {
+            throw NoteContentError.serverError(statusCode: 0)
+        }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        DriveThumbnail.prepare(&request, jpeg: jpeg)
+        let response: URLResponse
+        do {
+            (_, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            throw NoteContentError.networkError(underlying: error)
+        }
+        try Self.checkStatus(response)
     }
 
     // MARK: - Offline Support
@@ -554,6 +593,8 @@ private struct APIFileResponse: Decodable {
     let sizeBytes: Int64
     let mimeType: String
     let updatedAt: Date
+    /// Where Drive serves the file's preview, or nil when it has none.
+    let coverThumbnailUrl: String?
 }
 
 private struct APIKeyResponse: Decodable {
