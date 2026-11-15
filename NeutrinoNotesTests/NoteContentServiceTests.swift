@@ -46,6 +46,23 @@ final class NoteContentServiceTests: XCTestCase {
         XCTAssertEqual(decrypted, "# Hello\n\nWorld")
     }
 
+    /// Another client may write the body as NEB1, the chunked format (neutrino#318).
+    func test_decrypt_opensANEB1Body() throws {
+        let sut = NoteContentService()
+        let dek = sodium.secretStream.xchacha20poly1305.key()
+        let original = String(repeating: "- a line of a long note\n", count: 600)
+        let body = try DriveFileCrypto.encryptNEB1(Data(original.utf8), dek: dek, chunkSize: 4096)
+        XCTAssertEqual(try sut.decrypt(data: body, dek: dek), original)
+
+        var damaged = body
+        damaged[damaged.count - 1] ^= 1
+        XCTAssertThrowsError(try sut.decrypt(data: damaged, dek: dek)) { error in
+            guard case NoteContentError.decryptionFailed = error else {
+                return XCTFail("Expected decryptionFailed, got \(error)")
+            }
+        }
+    }
+
     func test_encryptThenDecrypt_emptyString_roundTrips() throws {
         let sut = NoteContentService()
         let xcss = sodium.secretStream.xchacha20poly1305

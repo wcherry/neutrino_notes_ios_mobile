@@ -301,21 +301,16 @@ final class NoteContentService: ObservableObject {
     }
 
     /// Reverses `encrypt(text:dek:xcss:)`.
+    ///
+    /// Reads a file body in any shape the platform writes — v0, NEB1 or Photos-chunked
+    /// (neutrino#318) — through `NeutrinoCrypto`'s `DriveFileCrypto`, the one reader every client
+    /// agrees on. Reading only v0 here meant a document another client wrote chunked would not open.
     func decrypt(data: Data, dek: Bytes) throws -> String {
-        let headerSize = 24
-        guard data.count > headerSize else {
-            logger.error("decrypt: data too short (\(data.count) bytes, need >\(headerSize))")
-            throw NoteContentError.decryptionFailed
-        }
-        let header = Array(data.prefix(headerSize))
-        let ciphertext = Array(data.dropFirst(headerSize))
-        let xcss = Self.sodium.secretStream.xchacha20poly1305
-        guard let pull = xcss.initPull(secretKey: dek, header: header) else {
-            logger.error("decrypt: initPull failed (dek=\(dek.count) bytes, header=\(header.count) bytes)")
-            throw NoteContentError.decryptionFailed
-        }
-        guard let (plaintext, _) = pull.pull(cipherText: ciphertext) else {
-            logger.error("decrypt: pull failed (ciphertext=\(ciphertext.count) bytes) — wrong DEK or corrupted content")
+        let plaintext: Data
+        do {
+            plaintext = try DriveFileCrypto.decrypt(data, dek: dek)
+        } catch {
+            logger.error("decrypt: failed (\(data.count) bytes) — wrong DEK or corrupted content")
             throw NoteContentError.decryptionFailed
         }
         guard let text = String(bytes: plaintext, encoding: .utf8) else {
